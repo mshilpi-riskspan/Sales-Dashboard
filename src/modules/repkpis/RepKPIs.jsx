@@ -23,7 +23,7 @@ function useAllQueries() {
 }
 
 export default function RepKPIs() {
-  const { selectedRep, triggerRefresh } = useDashboard();
+  const { selectedRep, repList, triggerRefresh } = useDashboard();
   const { tasks, events, oppsQtr, oppsYtd } = useAllQueries();
   const [drillState, setDrillState] = useState(null); // { title, records, type }
   const [activeDeal, setActiveDeal] = useState(null);
@@ -41,8 +41,10 @@ export default function RepKPIs() {
   const repMetrics = useMemo(() => {
     if (selectedRep !== 'all') return null;
     if (!tasks.data || !events.data || !oppsQtr.data || !oppsYtd.data) return null;
-    return computePerRepMetrics(tasks.data, events.data, oppsQtr.data, oppsYtd.data);
-  }, [selectedRep, tasks.data, events.data, oppsQtr.data, oppsYtd.data]);
+    const activeRepIds = new Set(repList.map((r) => r.id));
+    return computePerRepMetrics(tasks.data, events.data, oppsQtr.data, oppsYtd.data)
+      .filter((r) => activeRepIds.has(r.id));
+  }, [selectedRep, tasks.data, events.data, oppsQtr.data, oppsYtd.data, repList]);
 
   const handleDrill = useCallback((title, records, type) => {
     if (records?.length) setDrillState({ title, records, type });

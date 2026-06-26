@@ -245,9 +245,11 @@ export async function fetchOppsYTD() {
 }
 
 export async function fetchAllReps() {
-  // Derive reps from all opportunities so the list exactly matches what appears in pipeline views
+  // Only include reps who own at least one open opportunity (same filter as fetchOpenOpportunities)
   const opps = await queryAll(
     `SELECT OwnerId, Owner.Name FROM Opportunity
+     WHERE (IsClosed = false OR (IsWon = true AND CloseDate = THIS_YEAR))
+     AND StageName != 'Client Prospecting'
      ORDER BY Owner.Name ASC`
   );
 

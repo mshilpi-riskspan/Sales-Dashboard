@@ -16,7 +16,7 @@ export default function ActivitySection({ metrics, loading, onDrill }) {
         <KpiCard
           title="Meetings / Month"
           value={metrics?.meetingsPerMonth}
-          subtitle="Meeting/Call tasks + events this quarter"
+          subtitle="Calendar meetings this quarter (excl. calls)"
           category="activity"
           loading={loading}
           onClick={onDrill ? () => onDrill('Meetings This Quarter', metrics?._meetingActivities, 'activities') : undefined}

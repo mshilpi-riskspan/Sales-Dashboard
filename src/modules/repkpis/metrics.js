@@ -62,7 +62,7 @@ export function computeMetrics(tasks, events, oppsQtr, oppsYtd, repId = null) {
 
   // Trial → Proposal: opps currently at Proposal stage or later that came from Trial
   // Approximation: count opps currently at stage >= 3 (Proposal or later)
-  const laterStages = new Set(['Proposal (Pricing) Delivered', 'Trial', 'Negotiation & Decision Making', 'Contract Sent for Signature', 'Closed Won']);
+  const laterStages = new Set(['Proposal (pricing) Delivered', 'Trial', 'Negotiation & Decision Making', 'Contract Sent for Signature', 'Closed Won']);
   const trialAndLater = repOppsQtr.filter((o) => laterStages.has(o.StageName));
   const trialToProposalRate = trialAndLater.length > 0
     ? (trialAndLater.filter((o) => o.StageName !== 'Trial').length / trialAndLater.length) * 100

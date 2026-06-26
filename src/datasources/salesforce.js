@@ -135,7 +135,7 @@ export async function fetchOpenOpportunities() {
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CreatedDate, LastStageChangeDate, CloseDate
      FROM Opportunity
-     WHERE IsClosed = false
+     WHERE (IsClosed = false OR (IsWon = true AND CloseDate = THIS_YEAR))
      AND StageName != 'Client Prospecting'
      ORDER BY CreatedDate DESC`
   );
@@ -168,7 +168,7 @@ export async function fetchAccountDetail(accountId) {
   if (isCacheValid(cached)) return cached.data;
 
   const { sessionId: sid, instanceUrl: base } = await getSession();
-  const soql = `SELECT Id, Name, Industry, Type, Website, Phone, Description, AnnualRevenue FROM Account WHERE Id = '${accountId}'`;
+  const soql = `SELECT Id, Name, Industry, Type, Website, Phone, Description, AnnualRevenue, BillingCity, BillingState, OwnerId, Owner.Name FROM Account WHERE Id = '${accountId}'`;
   const proxied = `${base}/services/data/v60.0/query/?q=${encodeURIComponent(soql)}`.replace(/^https:\/\/[^/]+/, '/sf-api');
 
   const res = await fetch(proxied, { headers: { Authorization: `Bearer ${sid}` } });
@@ -195,13 +195,30 @@ export async function fetchAccountActivities(accountId) {
   }
 
   const [tasks, events] = await Promise.all([
-    run(`SELECT Id, Subject, Type, ActivityDate, Status, OwnerId, Owner.Name FROM Task WHERE WhatId = '${accountId}' ORDER BY ActivityDate DESC LIMIT 20`),
-    run(`SELECT Id, Subject, Type, StartDateTime, OwnerId, Owner.Name FROM Event WHERE WhatId = '${accountId}' ORDER BY StartDateTime DESC LIMIT 10`),
+    run(`SELECT Id, Subject, Type, ActivityDate, Status, OwnerId, Owner.Name, Description FROM Task WHERE WhatId = '${accountId}' AND ActivityDate = THIS_YEAR ORDER BY ActivityDate DESC NULLS LAST LIMIT 100`),
+    run(`SELECT Id, Subject, Type, StartDateTime, OwnerId, Owner.Name, Description FROM Event WHERE WhatId = '${accountId}' AND StartDateTime = THIS_YEAR ORDER BY StartDateTime DESC LIMIT 50`),
   ]);
 
   const result = { tasks, events };
   cache.set(cacheKey, { data: result, timestamp: Date.now() });
   return result;
+}
+
+export async function fetchAccountContacts(accountId) {
+  const cacheKey = `contacts:${accountId}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  const { sessionId: sid, instanceUrl: base } = await getSession();
+  const soql = `SELECT Id, FirstName, LastName, Title, Email, Phone, LastActivityDate FROM Contact WHERE AccountId = '${accountId}' ORDER BY LastActivityDate DESC NULLS LAST LIMIT 25`;
+  const proxied = `${base}/services/data/v60.0/query/?q=${encodeURIComponent(soql)}`.replace(/^https:\/\/[^/]+/, '/sf-api');
+
+  const res = await fetch(proxied, { headers: { Authorization: `Bearer ${sid}` } });
+  if (!res.ok) return [];
+  const json = await res.json();
+  const records = json.records || [];
+  cache.set(cacheKey, { data: records, timestamp: Date.now() });
+  return records;
 }
 
 export async function fetchOppsThisQuarter() {

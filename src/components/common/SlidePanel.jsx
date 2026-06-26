@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
 export default function SlidePanel({ open, onClose, title, subtitle, children, width = 440 }) {
@@ -11,7 +12,7 @@ export default function SlidePanel({ open, onClose, title, subtitle, children, w
     return () => document.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
-  return (
+  return createPortal(
     <>
       <div
         className={`fixed inset-0 bg-black/30 z-40 transition-opacity duration-300 ${open ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}
@@ -37,6 +38,7 @@ export default function SlidePanel({ open, onClose, title, subtitle, children, w
           {children}
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }

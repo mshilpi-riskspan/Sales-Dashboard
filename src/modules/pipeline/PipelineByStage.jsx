@@ -18,19 +18,22 @@ export default function PipelineByStage() {
   const [showAllDeals, setShowAllDeals] = useState(false);
   const [activeDeal, setActiveDeal] = useState(null);
 
-  const stageData = useMemo(() => {
+  const { stageData, otherDeals } = useMemo(() => {
     const map = {};
     for (const stage of SALES_STAGES) {
       map[stage.name] = { deals: [], totalArr: 0 };
     }
-    if (!filtered) return map;
+    const other = [];
+    if (!filtered) return { stageData: map, otherDeals: other };
     for (const opp of filtered) {
-      if (map[opp.StageName]) {
+      if (map[opp.StageName] !== undefined) {
         map[opp.StageName].deals.push(opp);
         map[opp.StageName].totalArr += opp.Annual_Recurring_Revenue_ARR__c ?? opp.Amount ?? 0;
+      } else {
+        other.push(opp);
       }
     }
-    return map;
+    return { stageData: map, otherDeals: other };
   }, [filtered]);
 
   if (loading) {
@@ -57,6 +60,14 @@ export default function PipelineByStage() {
             onDealClick={setActiveDeal}
           />
         ))}
+        {otherDeals.length > 0 && (
+          <StageCard
+            key="other"
+            stage={{ id: 'other', order: '—', name: 'Other Stages', dayLimit: null, definition: 'Deals in stages outside the core 7-stage pipeline (e.g. Renewal Pending, Qualifying, Engaged).', exitCriteria: 'N/A' }}
+            deals={otherDeals}
+            onDealClick={setActiveDeal}
+          />
+        )}
       </div>
 
       <PipelineListPanel

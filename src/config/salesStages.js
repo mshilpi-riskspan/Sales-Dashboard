@@ -2,7 +2,7 @@ export const SALES_STAGES = [
   {
     order: 1,
     id: 'initial_demo',
-    name: 'Initial Demo / SQL',
+    name: 'Initial Demo/ SQL',
     dayLimit: 21,
     definition:
       'AE or SDR books meeting. AE runs initial qualification demo. ICP fit confirmed, value prop communicated, and B.A.N.T. covered. Derek to approve any NDA red lines.',
@@ -22,7 +22,7 @@ export const SALES_STAGES = [
   {
     order: 3,
     id: 'proposal',
-    name: 'Proposal (Pricing) Delivered',
+    name: 'Proposal (pricing) Delivered',
     dayLimit: 21,
     definition: 'Scope internally approved and formal pricing delivered to the prospect.',
     exitCriteria:

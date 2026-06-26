@@ -92,6 +92,18 @@ export function computeMetrics(tasks, events, oppsQtr, oppsYtd, repId = null) {
     arrClosedQtr: formatCurrency(arrClosedQtr),
     arrYtd: formatCurrency(arrYtd),
     winLossRate: formatPct(winLossRate),
+    // Raw slices for drill-down panels (prefixed with _ to distinguish from display values)
+    _emailTasks: repTasks.filter((t) => t.Type === 'Email' || t.Subject?.toLowerCase().includes('outreach')),
+    _meetingActivities: [
+      ...repTasks.filter((t) => t.Type === 'Meeting' || t.Type === 'Call').map((t) => ({ ...t, _src: 'task' })),
+      ...repEvents.filter((e) => e.Type === 'Meeting' || e.Type === 'Call').map((e) => ({ ...e, _src: 'event' })),
+    ],
+    _newPipelineOpps: repOppsQtr.filter((o) => !o.IsClosed),
+    _technicalFitOpps: openOpps.filter((o) => o.StageName === 'Technical Fit Agreement'),
+    _trialAndLaterOpps: repOppsQtr.filter((o) => laterStages.has(o.StageName)),
+    _closedQtrOpps: repOppsQtr.filter((o) => o.IsWon),
+    _closedYtdOpps: repOppsYtd.filter((o) => o.IsWon),
+    _uniqueClosedOpps: uniqueClosed,
   };
 }
 

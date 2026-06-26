@@ -8,7 +8,7 @@ function formatARR(v) {
   return `$${v}`;
 }
 
-export default function DealRow({ deal, stageConfig }) {
+export default function DealRow({ deal, stageConfig, onClick }) {
   const dateStr = deal.LastStageChangeDate || deal.CreatedDate;
   const daysInStage = dateStr ? differenceInDays(new Date(), new Date(dateStr)) : 0;
   const isOverdue = stageConfig?.dayLimit && daysInStage > stageConfig.dayLimit;
@@ -18,7 +18,8 @@ export default function DealRow({ deal, stageConfig }) {
 
   return (
     <tr
-      className={`border-b border-rs-border transition-colors ${
+      onClick={() => onClick?.(deal)}
+      className={`border-b border-rs-border transition-colors ${onClick ? 'cursor-pointer' : ''} ${
         isOverdue
           ? 'bg-[rgba(232,138,26,0.12)] hover:bg-[rgba(232,138,26,0.18)]'
           : 'hover:bg-[#E8EBF2]'

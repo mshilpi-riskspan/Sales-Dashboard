@@ -8,7 +8,7 @@ function formatARR(v) {
   return `$${v}`;
 }
 
-export default function FunnelSummary({ stageData }) {
+export default function FunnelSummary({ stageData, onShowAll }) {
   const totalDeals = SALES_STAGES.reduce((sum, s) => sum + (stageData[s.name]?.deals.length || 0), 0);
   const totalArr = SALES_STAGES.reduce((sum, s) => sum + (stageData[s.name]?.totalArr || 0), 0);
 
@@ -16,14 +16,17 @@ export default function FunnelSummary({ stageData }) {
     <div className="rounded-card border border-rs-border bg-white p-4 mb-6">
       <div className="flex items-center justify-between mb-3">
         <h2 className="text-sm font-semibold text-rs-text">Pipeline Overview</h2>
-        <div className="flex gap-4 text-xs">
+        <button
+          onClick={onShowAll}
+          className="flex gap-4 text-xs hover:opacity-80 transition-opacity"
+        >
           <span className="text-rs-muted">
-            <span className="font-bold text-rs-text text-sm">{totalDeals}</span> open deals
+            <span className="font-bold text-rs-text text-sm underline decoration-dotted">{totalDeals}</span> open deals
           </span>
           <span className="text-rs-muted">
-            <span className="font-bold text-rs-teal text-sm">{formatARR(totalArr)}</span> total ARR
+            <span className="font-bold text-rs-teal text-sm underline decoration-dotted">{formatARR(totalArr)}</span> total ARR
           </span>
-        </div>
+        </button>
       </div>
       <FunnelBar stageData={stageData} />
     </div>

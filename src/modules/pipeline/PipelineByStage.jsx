@@ -1,10 +1,12 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { useSalesforceQuery } from '../../hooks/useSalesforceQuery';
 import { useRepFilter } from '../../hooks/useRepFilter';
 import { fetchOpenOpportunities } from '../../datasources/salesforce';
 import { SALES_STAGES } from '../../config/salesStages';
 import FunnelSummary from './FunnelSummary';
 import StageCard from './StageCard';
+import PipelineListPanel from './PipelineListPanel';
+import DealDetailPanel from '../../components/common/DealDetailPanel';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorState from '../../components/common/ErrorState';
 import { useDashboard } from '../../context/DashboardContext';
@@ -13,6 +15,8 @@ export default function PipelineByStage() {
   const { triggerRefresh } = useDashboard();
   const { data, loading, error } = useSalesforceQuery(fetchOpenOpportunities);
   const filtered = useRepFilter(data);
+  const [showAllDeals, setShowAllDeals] = useState(false);
+  const [activeDeal, setActiveDeal] = useState(null);
 
   const stageData = useMemo(() => {
     const map = {};
@@ -43,12 +47,27 @@ export default function PipelineByStage() {
 
   return (
     <div>
-      <FunnelSummary stageData={stageData} />
+      <FunnelSummary stageData={stageData} onShowAll={() => setShowAllDeals(true)} />
       <div className="space-y-4">
         {SALES_STAGES.map((stage) => (
-          <StageCard key={stage.id} stage={stage} deals={stageData[stage.name]?.deals || []} />
+          <StageCard
+            key={stage.id}
+            stage={stage}
+            deals={stageData[stage.name]?.deals || []}
+            onDealClick={setActiveDeal}
+          />
         ))}
       </div>
+
+      <PipelineListPanel
+        deals={showAllDeals ? filtered : null}
+        onClose={() => setShowAllDeals(false)}
+        onDealClick={(deal) => { setShowAllDeals(false); setActiveDeal(deal); }}
+      />
+      <DealDetailPanel
+        deal={activeDeal}
+        onClose={() => setActiveDeal(null)}
+      />
     </div>
   );
 }

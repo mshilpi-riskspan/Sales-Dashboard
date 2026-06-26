@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState, useCallback } from 'react';
 import { useSalesforceQuery } from '../../hooks/useSalesforceQuery';
 import { fetchTasksThisQuarter, fetchEventsThisQuarter, fetchOppsThisQuarter, fetchOppsYTD } from '../../datasources/salesforce';
 import { useRepFilter } from '../../hooks/useRepFilter';
@@ -9,6 +9,8 @@ import PipelineGrowthSection from './PipelineGrowthSection';
 import DealProgressionSection from './DealProgressionSection';
 import RevenueSection from './RevenueSection';
 import RepBreakdownTable from './RepBreakdownTable';
+import KpiDrillPanel from './KpiDrillPanel';
+import DealDetailPanel from '../../components/common/DealDetailPanel';
 import ErrorState from '../../components/common/ErrorState';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 
@@ -23,6 +25,8 @@ function useAllQueries() {
 export default function RepKPIs() {
   const { selectedRep, triggerRefresh } = useDashboard();
   const { tasks, events, oppsQtr, oppsYtd } = useAllQueries();
+  const [drillState, setDrillState] = useState(null); // { title, records, type }
+  const [activeDeal, setActiveDeal] = useState(null);
 
   const loading = tasks.loading || events.loading || oppsQtr.loading || oppsYtd.loading;
   const error = tasks.error || events.error || oppsQtr.error || oppsYtd.error;
@@ -40,6 +44,15 @@ export default function RepKPIs() {
     return computePerRepMetrics(tasks.data, events.data, oppsQtr.data, oppsYtd.data);
   }, [selectedRep, tasks.data, events.data, oppsQtr.data, oppsYtd.data]);
 
+  const handleDrill = useCallback((title, records, type) => {
+    if (records?.length) setDrillState({ title, records, type });
+  }, []);
+
+  const handleDealClick = useCallback((deal) => {
+    setDrillState(null);
+    setActiveDeal(deal);
+  }, []);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -54,11 +67,25 @@ export default function RepKPIs() {
 
   return (
     <div className="space-y-8">
-      <ActivitySection metrics={metrics} loading={loading} />
-      <PipelineGrowthSection metrics={metrics} loading={loading} />
-      <DealProgressionSection metrics={metrics} loading={loading} />
-      <RevenueSection metrics={metrics} loading={loading} />
+      <ActivitySection metrics={metrics} loading={loading} onDrill={handleDrill} />
+      <PipelineGrowthSection metrics={metrics} loading={loading} onDrill={handleDrill} />
+      <DealProgressionSection metrics={metrics} loading={loading} onDrill={handleDrill} />
+      <RevenueSection metrics={metrics} loading={loading} onDrill={handleDrill} />
       {selectedRep === 'all' && repMetrics && <RepBreakdownTable repMetrics={repMetrics} />}
+
+      <KpiDrillPanel
+        title={drillState?.title}
+        records={drillState?.records}
+        type={drillState?.type}
+        onClose={() => setDrillState(null)}
+        onDealClick={handleDealClick}
+      />
+      <DealDetailPanel
+        deal={activeDeal}
+        onClose={() => setActiveDeal(null)}
+        tasks={tasks.data}
+        events={events.data}
+      />
     </div>
   );
 }

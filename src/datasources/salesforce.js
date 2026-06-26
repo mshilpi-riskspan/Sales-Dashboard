@@ -144,7 +144,7 @@ export async function fetchOpenOpportunities() {
 export async function fetchTasksThisQuarter() {
   // LIMIT caps pagination — enough for meaningful activity metrics
   return queryAll(
-    `SELECT Id, WhoId, OwnerId, Owner.Name, Type, Subject, ActivityDate, CreatedDate, Status
+    `SELECT Id, WhoId, WhatId, OwnerId, Owner.Name, Type, Subject, ActivityDate, CreatedDate, Status
      FROM Task
      WHERE CreatedDate = THIS_QUARTER
      ORDER BY CreatedDate DESC
@@ -154,12 +154,54 @@ export async function fetchTasksThisQuarter() {
 
 export async function fetchEventsThisQuarter() {
   return queryAll(
-    `SELECT Id, OwnerId, Owner.Name, Type, Subject, StartDateTime, EndDateTime
+    `SELECT Id, WhatId, OwnerId, Owner.Name, Type, Subject, StartDateTime, EndDateTime
      FROM Event
      WHERE StartDateTime = THIS_QUARTER
      ORDER BY StartDateTime DESC
      LIMIT 2000`
   );
+}
+
+export async function fetchAccountDetail(accountId) {
+  const cacheKey = `account:${accountId}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  const { sessionId: sid, instanceUrl: base } = await getSession();
+  const soql = `SELECT Id, Name, Industry, Type, Website, Phone, Description, AnnualRevenue FROM Account WHERE Id = '${accountId}'`;
+  const proxied = `${base}/services/data/v60.0/query/?q=${encodeURIComponent(soql)}`.replace(/^https:\/\/[^/]+/, '/sf-api');
+
+  const res = await fetch(proxied, { headers: { Authorization: `Bearer ${sid}` } });
+  if (!res.ok) return null;
+  const json = await res.json();
+  const record = json.records?.[0] ?? null;
+  cache.set(cacheKey, { data: record, timestamp: Date.now() });
+  return record;
+}
+
+export async function fetchAccountActivities(accountId) {
+  const cacheKey = `activities:${accountId}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  const { sessionId: sid, instanceUrl: base } = await getSession();
+
+  async function run(soql) {
+    const proxied = `${base}/services/data/v60.0/query/?q=${encodeURIComponent(soql)}`.replace(/^https:\/\/[^/]+/, '/sf-api');
+    const res = await fetch(proxied, { headers: { Authorization: `Bearer ${sid}` } });
+    if (!res.ok) return [];
+    const json = await res.json();
+    return json.records || [];
+  }
+
+  const [tasks, events] = await Promise.all([
+    run(`SELECT Id, Subject, Type, ActivityDate, Status, OwnerId, Owner.Name FROM Task WHERE WhatId = '${accountId}' ORDER BY ActivityDate DESC LIMIT 20`),
+    run(`SELECT Id, Subject, Type, StartDateTime, OwnerId, Owner.Name FROM Event WHERE WhatId = '${accountId}' ORDER BY StartDateTime DESC LIMIT 10`),
+  ]);
+
+  const result = { tasks, events };
+  cache.set(cacheKey, { data: result, timestamp: Date.now() });
+  return result;
 }
 
 export async function fetchOppsThisQuarter() {

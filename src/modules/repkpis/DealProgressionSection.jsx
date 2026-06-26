@@ -1,6 +1,6 @@
 import KpiCard from '../../components/common/KpiCard';
 
-export default function DealProgressionSection({ metrics, loading }) {
+export default function DealProgressionSection({ metrics, loading, onDrill }) {
   return (
     <div>
       <h2 className="text-xs font-bold uppercase tracking-widest text-rs-muted mb-3">Deal Progression</h2>
@@ -11,6 +11,7 @@ export default function DealProgressionSection({ metrics, loading }) {
           subtitle="Open opps at Stage 2: Technical Fit Agreement"
           category="dealProgression"
           loading={loading}
+          onClick={onDrill ? () => onDrill('Deals at Technical Fit', metrics?._technicalFitOpps, 'opps') : undefined}
         />
         <KpiCard
           title="Trial → Proposal Rate"
@@ -18,6 +19,7 @@ export default function DealProgressionSection({ metrics, loading }) {
           subtitle="Deals at Trial or later that advanced past Trial"
           category="dealProgression"
           loading={loading}
+          onClick={onDrill ? () => onDrill('Trial Stage & Beyond', metrics?._trialAndLaterOpps, 'opps') : undefined}
         />
         <KpiCard
           title="Avg Days / Stage"

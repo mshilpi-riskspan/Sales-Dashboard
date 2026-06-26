@@ -12,7 +12,7 @@ function formatARR(v) {
   return `$${v}`;
 }
 
-export default function StageCard({ stage, deals }) {
+export default function StageCard({ stage, deals, onDealClick }) {
   const [expanded, setExpanded] = useState(true);
 
   const totalArr = deals.reduce((sum, d) => {
@@ -80,7 +80,7 @@ export default function StageCard({ stage, deals }) {
               </thead>
               <tbody>
                 {deals.map((deal) => (
-                  <DealRow key={deal.Id} deal={deal} stageConfig={stage} />
+                  <DealRow key={deal.Id} deal={deal} stageConfig={stage} onClick={onDealClick} />
                 ))}
               </tbody>
             </table>

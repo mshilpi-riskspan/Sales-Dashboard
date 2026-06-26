@@ -5,11 +5,15 @@ const COLOR_SCHEMES = {
   revenue: { header: '#7C3AED', headerText: '#ffffff' },
 };
 
-export default function KpiCard({ title, value, subtitle, category = 'pipeline', loading = false }) {
+export default function KpiCard({ title, value, subtitle, category = 'pipeline', loading = false, onClick }) {
   const scheme = COLOR_SCHEMES[category] || COLOR_SCHEMES.pipeline;
 
   return (
-    <div className="rounded-card border border-rs-border bg-white overflow-hidden">
+    <div
+      className={`rounded-card border border-rs-border bg-white overflow-hidden ${onClick ? 'cursor-pointer hover:ring-2 hover:ring-rs-teal/40 transition-shadow' : ''}`}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+    >
       <div
         className="px-4 py-2.5 text-sm font-semibold tracking-wide"
         style={{ backgroundColor: scheme.header, color: scheme.headerText }}

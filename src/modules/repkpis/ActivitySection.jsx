@@ -1,6 +1,6 @@
 import KpiCard from '../../components/common/KpiCard';
 
-export default function ActivitySection({ metrics, loading }) {
+export default function ActivitySection({ metrics, loading, onDrill }) {
   return (
     <div>
       <h2 className="text-xs font-bold uppercase tracking-widest text-rs-muted mb-3">Activity</h2>
@@ -11,6 +11,7 @@ export default function ActivitySection({ metrics, loading }) {
           subtitle="Tasks: Type=Email or Subject contains outreach"
           category="activity"
           loading={loading}
+          onClick={onDrill ? () => onDrill('Outbound Emails', metrics?._emailTasks, 'tasks') : undefined}
         />
         <KpiCard
           title="Meetings / Month"
@@ -18,6 +19,7 @@ export default function ActivitySection({ metrics, loading }) {
           subtitle="Meeting/Call tasks + events this quarter"
           category="activity"
           loading={loading}
+          onClick={onDrill ? () => onDrill('Meetings This Quarter', metrics?._meetingActivities, 'activities') : undefined}
         />
       </div>
     </div>

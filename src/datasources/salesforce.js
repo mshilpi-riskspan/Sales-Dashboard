@@ -133,7 +133,8 @@ async function queryAll(soql) {
 export async function fetchOpenOpportunities() {
   return queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
-     AccountId, Account.Name, CreatedDate, LastStageChangeDate, CloseDate
+     AccountId, Account.Name, CreatedDate, LastStageChangeDate, CloseDate, NextStep,
+     ForecastCategoryName, IsClosed, IsWon
      FROM Opportunity
      WHERE (IsClosed = false OR (IsWon = true AND CloseDate = THIS_YEAR))
      AND StageName != 'Client Prospecting'

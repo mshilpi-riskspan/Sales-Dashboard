@@ -52,6 +52,25 @@ function CadenceBar({ label, count, max }) {
   );
 }
 
+const TYPE_META = {
+  Email:           { label: 'Email',   color: 'bg-purple-50 text-purple-600' },
+  Call:            { label: 'Call',    color: 'bg-rs-teal/10 text-rs-teal' },
+  Meeting:         { label: 'Meeting', color: 'bg-green-50 text-green-700' },
+  Virtual_Meeting: { label: 'Virtual', color: 'bg-green-50 text-green-700' },
+  VIRTUAL_MEETING: { label: 'Virtual', color: 'bg-green-50 text-green-700' },
+  Task:            { label: 'Task',    color: 'bg-rs-surface text-rs-muted' },
+  Event:           { label: 'Event',   color: 'bg-orange-50 text-orange-600' },
+};
+
+function TypeBadge({ type }) {
+  const meta = TYPE_META[type] || { label: type?.slice(0, 8) || '—', color: 'bg-rs-surface text-rs-muted' };
+  return (
+    <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded ${meta.color} uppercase tracking-wide leading-none`}>
+      {meta.label}
+    </span>
+  );
+}
+
 function ActivityItem({ activity }) {
   const [expanded, setExpanded] = useState(false);
   const date = activity.ActivityDate || activity.StartDateTime;
@@ -62,33 +81,29 @@ function ActivityItem({ activity }) {
 
   return (
     <div className="py-2.5 border-b border-rs-border/50 last:border-0">
-      <div className="flex gap-3">
-        <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded bg-rs-surface text-rs-muted uppercase tracking-wide mt-0.5">
-          {type}
-        </span>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-medium text-rs-text leading-snug">{activity.Subject || '—'}</p>
-          <p className="text-[10px] text-rs-muted mt-0.5">
-            {date ? format(new Date(date), 'MMM d, yyyy') : '—'}
-            {activity.Owner?.Name ? ` · ${activity.Owner.Name}` : ''}
+      <div className="flex items-start justify-between gap-2 mb-0.5">
+        <p className="text-xs font-medium text-rs-text leading-snug flex-1 min-w-0">{activity.Subject || '—'}</p>
+        <TypeBadge type={type} />
+      </div>
+      <p className="text-[10px] text-rs-muted mb-1">
+        {date ? format(new Date(date), 'MMM d, yyyy') : '—'}
+        {activity.Owner?.Name ? ` · ${activity.Owner.Name}` : ''}
+      </p>
+      {preview && (
+        <div>
+          <p className="text-[11px] text-rs-muted leading-relaxed">
+            {expanded || !isLong ? preview : `${preview.slice(0, 120)}…`}
           </p>
-          {preview && (
-            <div className="mt-1.5">
-              <p className="text-[11px] text-rs-muted leading-relaxed">
-                {expanded || !isLong ? preview : `${preview.slice(0, 120)}…`}
-              </p>
-              {isLong && (
-                <button
-                  onClick={() => setExpanded((e) => !e)}
-                  className="text-[10px] text-rs-teal hover:underline mt-0.5"
-                >
-                  {expanded ? 'Show less' : 'Show more'}
-                </button>
-              )}
-            </div>
+          {isLong && (
+            <button
+              onClick={() => setExpanded((e) => !e)}
+              className="text-[10px] text-rs-teal hover:underline mt-0.5"
+            >
+              {expanded ? 'Show less' : 'Show more'}
+            </button>
           )}
         </div>
-      </div>
+      )}
     </div>
   );
 }

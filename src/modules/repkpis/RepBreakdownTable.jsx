@@ -1,5 +1,19 @@
+function parseARR(str) {
+  if (!str || str === '$0' || str === '—') return 0;
+  const n = parseFloat(str.replace(/[$,]/g, ''));
+  if (str.includes('M')) return n * 1_000_000;
+  if (str.includes('K')) return n * 1_000;
+  return n;
+}
+
 export default function RepBreakdownTable({ repMetrics }) {
   if (!repMetrics || repMetrics.length === 0) return null;
+
+  const sorted = [...repMetrics].sort((a, b) => {
+    const ytd = parseARR(b.arrYtd) - parseARR(a.arrYtd);
+    if (ytd !== 0) return ytd;
+    return parseARR(b.activePipelineArr) - parseARR(a.activePipelineArr);
+  });
 
   const columns = [
     { key: 'name', label: 'Rep' },
@@ -32,7 +46,7 @@ export default function RepBreakdownTable({ repMetrics }) {
             </tr>
           </thead>
           <tbody>
-            {repMetrics.map((rep) => (
+            {sorted.map((rep) => (
               <tr
                 key={rep.id}
                 className="border-b border-rs-border hover:bg-[#E8EBF2] transition-colors"

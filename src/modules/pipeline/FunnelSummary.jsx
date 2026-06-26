@@ -10,7 +10,9 @@ function formatARR(v) {
 
 export default function FunnelSummary({ stageData, onShowAll }) {
   const totalDeals = SALES_STAGES.reduce((sum, s) => sum + (stageData[s.name]?.deals.length || 0), 0);
-  const totalArr = SALES_STAGES.reduce((sum, s) => sum + (stageData[s.name]?.totalArr || 0), 0);
+  const totalArr = SALES_STAGES
+    .filter((s) => s.name !== 'Closed Won')
+    .reduce((sum, s) => sum + (stageData[s.name]?.totalArr || 0), 0);
 
   return (
     <div className="rounded-card border border-rs-border bg-white p-4 mb-6">
@@ -24,7 +26,7 @@ export default function FunnelSummary({ stageData, onShowAll }) {
             <span className="font-bold text-rs-text text-sm underline decoration-dotted">{totalDeals}</span> open deals
           </span>
           <span className="text-rs-muted">
-            <span className="font-bold text-rs-teal text-sm underline decoration-dotted">{formatARR(totalArr)}</span> total ARR
+            <span className="font-bold text-rs-teal text-sm underline decoration-dotted">{formatARR(totalArr)}</span> total ARR in pipeline
           </span>
         </button>
       </div>

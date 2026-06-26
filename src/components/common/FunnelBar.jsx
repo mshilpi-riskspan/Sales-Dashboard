@@ -1,4 +1,4 @@
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, LabelList } from 'recharts';
 import { SALES_STAGES } from '../../config/salesStages';
 
 const COLORS = ['#1C2E59', '#1a4270', '#175589', '#1268a2', '#0C8EA3', '#0aa09a', '#08b58c'];
@@ -34,8 +34,8 @@ export default function FunnelBar({ stageData }) {
   });
 
   return (
-    <ResponsiveContainer width="100%" height={100}>
-      <BarChart data={data} layout="horizontal" margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+    <ResponsiveContainer width="100%" height={120}>
+      <BarChart data={data} layout="horizontal" margin={{ top: 18, right: 0, bottom: 0, left: 0 }}>
         <XAxis
           dataKey="name"
           tick={{ fontSize: 10, fill: '#858C9C' }}
@@ -49,6 +49,12 @@ export default function FunnelBar({ stageData }) {
           {data.map((entry, i) => (
             <Cell key={i} fill={entry.color} />
           ))}
+          <LabelList
+            dataKey="totalArr"
+            position="top"
+            formatter={formatCurrency}
+            style={{ fontSize: 10, fill: '#858C9C', fontWeight: 500 }}
+          />
         </Bar>
       </BarChart>
     </ResponsiveContainer>

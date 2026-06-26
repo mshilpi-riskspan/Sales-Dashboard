@@ -4,6 +4,40 @@ import SlidePanel from './SlidePanel';
 import { fetchAccountDetail, fetchAccountActivities, fetchAccountContacts } from '../../datasources/salesforce';
 import { STAGE_MAP } from '../../config/salesStages';
 
+// Parses a raw Salesforce email Task Description into structured parts.
+// SF stores emails as: "To: ... CC: ... Subject: ... Body: [message] From: [reply chain]"
+function parseActivityBody(description, type) {
+  if (!description) return { body: null, meta: null };
+  const raw = description.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+
+  const isEmail = type === 'Email' || /^To:\s|Body:\s/.test(raw);
+
+  if (isEmail) {
+    // Extract To/CC/Subject from header block
+    const toMatch = raw.match(/^To:\s*([^\n]+?)(?:\s+CC:|$)/m);
+    const subjectMatch = raw.match(/Subject:\s*([^\n]+?)(?:\s+Body:|$)/m);
+    const bodyMatch = raw.match(/Body:\s*([\s\S]*?)(?:\n(?:From:|Sent:|[-_]{10,})|\s*$)/);
+
+    let body = bodyMatch ? bodyMatch[1].trim() : null;
+    // Strip "External Email: Be cautious..." security banner (ends at first real sentence)
+    if (body) {
+      body = body.replace(/^External Email:.*?(?=\n\n|\n[A-Z]|[A-Z][a-z]{2,}\s+\/)/s, '').trim();
+      // Strip trailing Teams meeting boilerplate
+      body = body.replace(/\n[-_]{3,}[\s\S]*/m, '').trim();
+    }
+
+    const to = toMatch ? toMatch[1].replace(/;/g, ' ·').trim() : null;
+    const subject = subjectMatch ? subjectMatch[1].trim() : null;
+
+    return { body: body || null, meta: { to, subject }, isEmail: true };
+  }
+
+  // Non-email (meeting notes, calls): show as-is but strip reply chains
+  const replyIdx = raw.search(/\n[-_]{10,}|\nFrom:\s[A-Z]/);
+  const body = replyIdx > 0 ? raw.slice(0, replyIdx).trim() : raw;
+  return { body, meta: null, isEmail: false };
+}
+
 function formatARR(v) {
   if (!v && v !== 0) return '—';
   if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`;
@@ -75,9 +109,8 @@ function ActivityItem({ activity }) {
   const [expanded, setExpanded] = useState(false);
   const date = activity.ActivityDate || activity.StartDateTime;
   const type = activity.Type || (activity._src === 'event' ? 'Event' : 'Task');
-  const body = activity.Description;
-  const preview = body ? body.replace(/\r\n/g, ' ').replace(/\n/g, ' ').trim() : null;
-  const isLong = preview && preview.length > 120;
+  const { body, meta, isEmail } = parseActivityBody(activity.Description, type);
+  const isLong = body && body.length > 160;
 
   return (
     <div className="py-2.5 border-b border-rs-border/50 last:border-0">
@@ -85,19 +118,24 @@ function ActivityItem({ activity }) {
         <p className="text-xs font-medium text-rs-text leading-snug flex-1 min-w-0">{activity.Subject || '—'}</p>
         <TypeBadge type={type} />
       </div>
-      <p className="text-[10px] text-rs-muted mb-1">
+      <p className="text-[10px] text-rs-muted mb-1.5">
         {date ? format(new Date(date), 'MMM d, yyyy') : '—'}
         {activity.Owner?.Name ? ` · ${activity.Owner.Name}` : ''}
       </p>
-      {preview && (
-        <div>
-          <p className="text-[11px] text-rs-muted leading-relaxed">
-            {expanded || !isLong ? preview : `${preview.slice(0, 120)}…`}
+      {isEmail && meta?.to && (
+        <p className="text-[10px] text-rs-muted mb-1 truncate">
+          <span className="font-medium">To:</span> {meta.to}
+        </p>
+      )}
+      {body && (
+        <div className={isEmail ? 'bg-rs-surface rounded-md px-2.5 py-2 mt-1' : ''}>
+          <p className="text-[11px] text-rs-text leading-relaxed whitespace-pre-line">
+            {expanded || !isLong ? body : `${body.slice(0, 160)}…`}
           </p>
           {isLong && (
             <button
               onClick={() => setExpanded((e) => !e)}
-              className="text-[10px] text-rs-teal hover:underline mt-0.5"
+              className="text-[10px] text-rs-teal hover:underline mt-1"
             >
               {expanded ? 'Show less' : 'Show more'}
             </button>

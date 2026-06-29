@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { differenceInDays, format, startOfYear, startOfQuarter, startOfMonth, startOfWeek } from 'date-fns';
 import SlidePanel from './SlidePanel';
-import { fetchAccountDetail, fetchAccountActivities, fetchAccountContacts } from '../../datasources/salesforce';
+import { fetchAccountDetail, fetchAccountActivities, fetchAccountContacts, fetchOpportunityHistory } from '../../datasources/salesforce';
 import { STAGE_MAP } from '../../config/salesStages';
 
 // Parses a raw Salesforce email Task Description into structured parts.
@@ -86,6 +86,57 @@ function CadenceBar({ label, count, max }) {
   );
 }
 
+const INTENT_META = {
+  Outreach:    { label: 'Outreach',   color: 'bg-amber-50 text-amber-700' },
+  Intro:       { label: 'Intro',      color: 'bg-blue-50 text-blue-600' },
+  'Follow-up': { label: 'Follow-up',  color: 'bg-orange-50 text-orange-600' },
+  Meeting:     { label: 'Meeting',    color: 'bg-green-50 text-green-700' },
+  Reply:       { label: 'Reply',      color: 'bg-rs-surface text-rs-muted' },
+};
+
+function getIntentTag(subject) {
+  if (!subject) return null;
+  const s = subject.toLowerCase();
+  if (/^re:/i.test(subject)) return 'Reply';
+  if (s.includes('outreach') || s.includes('reaching out')) return 'Outreach';
+  if (s.includes('intro') || s.includes('introduction')) return 'Intro';
+  if (s.includes('follow up') || s.includes('follow-up') || s.includes('followup') || s.includes('checking in')) return 'Follow-up';
+  if (s.includes('meeting') || s.includes('demo') || s.includes('sync') || s.includes('connect') || /\bcall\b/.test(s)) return 'Meeting';
+  return null;
+}
+
+function getBaseSubject(subject) {
+  if (!subject) return '';
+  return subject.replace(/^(re:|re:\s*re:|fw:|fwd:)\s*/gi, '').trim();
+}
+
+function groupActivities(activities) {
+  const emailGroups = new Map();
+  const standalone = [];
+
+  for (const a of activities) {
+    if (a.Type === 'Email') {
+      const base = getBaseSubject(a.Subject).toLowerCase();
+      if (!emailGroups.has(base)) emailGroups.set(base, []);
+      emailGroups.get(base).push(a);
+    } else {
+      standalone.push({ type: 'single', item: a, date: new Date(a.ActivityDate || a.StartDateTime || a.CreatedDate || 0) });
+    }
+  }
+
+  const threads = [];
+  for (const [, emails] of emailGroups) {
+    emails.sort((a, b) => new Date(a.ActivityDate || a.CreatedDate || 0) - new Date(b.ActivityDate || b.CreatedDate || 0));
+    threads.push({
+      type: emails.length > 1 ? 'thread' : 'single',
+      item: emails.length > 1 ? emails : emails[0],
+      date: new Date(emails[emails.length - 1].ActivityDate || emails[emails.length - 1].CreatedDate || 0),
+    });
+  }
+
+  return [...threads, ...standalone].sort((a, b) => b.date - a.date);
+}
+
 const TYPE_META = {
   Email:           { label: 'Email',   color: 'bg-purple-50 text-purple-600' },
   Call:            { label: 'Call',    color: 'bg-rs-teal/10 text-rs-teal' },
@@ -105,18 +156,57 @@ function TypeBadge({ type }) {
   );
 }
 
-function ActivityItem({ activity }) {
+function ActivityItem({ activity, compact = false, prevOwner = null }) {
   const [expanded, setExpanded] = useState(false);
   const date = activity.ActivityDate || activity.StartDateTime;
   const type = activity.Type || (activity._src === 'event' ? 'Event' : 'Task');
   const { body, meta, isEmail } = parseActivityBody(activity.Description, type);
   const isLong = body && body.length > 160;
+  const intent = type === 'Email' ? getIntentTag(activity.Subject) : null;
+  const intentMeta = intent ? INTENT_META[intent] : null;
+  const ownerChanged = activity.Owner?.Name && activity.Owner.Name !== prevOwner;
+
+  if (compact) {
+    return (
+      <div className="py-2 border-b border-rs-border/30 last:border-0">
+        <p className="text-[10px] text-rs-muted mb-1">
+          {date ? format(new Date(date), 'MMM d, yyyy') : '—'}
+          {ownerChanged && activity.Owner?.Name ? ` · ${activity.Owner.Name}` : ''}
+        </p>
+        {isEmail && meta?.to && (
+          <p className="text-[10px] text-rs-muted mb-1 truncate">
+            <span className="font-medium">To:</span> {meta.to}
+          </p>
+        )}
+        {body && (
+          <div className="bg-rs-surface rounded-md px-2.5 py-2">
+            <p className="text-[11px] text-rs-text leading-relaxed whitespace-pre-line">
+              {expanded || !isLong ? body : `${body.slice(0, 160)}…`}
+            </p>
+            {isLong && (
+              <button onClick={() => setExpanded(e => !e)} className="text-[10px] text-rs-teal hover:underline mt-1">
+                {expanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
+          </div>
+        )}
+        {!body && <p className="text-[11px] text-rs-muted italic">No content</p>}
+      </div>
+    );
+  }
 
   return (
     <div className="py-2.5 border-b border-rs-border/50 last:border-0">
       <div className="flex items-start justify-between gap-2 mb-0.5">
         <p className="text-xs font-medium text-rs-text leading-snug flex-1 min-w-0">{activity.Subject || '—'}</p>
-        <TypeBadge type={type} />
+        <div className="flex items-center gap-1 shrink-0">
+          <TypeBadge type={type} />
+          {intentMeta && (
+            <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wide leading-none ${intentMeta.color}`}>
+              {intentMeta.label}
+            </span>
+          )}
+        </div>
       </div>
       <p className="text-[10px] text-rs-muted mb-1.5">
         {date ? format(new Date(date), 'MMM d, yyyy') : '—'}
@@ -140,6 +230,46 @@ function ActivityItem({ activity }) {
               {expanded ? 'Show less' : 'Show more'}
             </button>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActivityThread({ emails }) {
+  const [open, setOpen] = useState(false);
+  const first = emails[0];
+  const last = emails[emails.length - 1];
+  const baseSubject = getBaseSubject(first.Subject);
+  const earliest = new Date(first.ActivityDate || first.CreatedDate || 0);
+  const latest = new Date(last.ActivityDate || last.CreatedDate || 0);
+  const sameDay = earliest.toDateString() === latest.toDateString();
+  const dateRange = sameDay
+    ? format(latest, 'MMM d, yyyy')
+    : `${format(earliest, 'MMM d')} – ${format(latest, 'MMM d, yyyy')}`;
+
+  return (
+    <div className="border-b border-rs-border/50 last:border-0">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full text-left py-2.5 flex items-start gap-2 hover:bg-rs-surface/50 rounded transition-colors"
+      >
+        <span className="text-rs-muted text-[10px] mt-0.5 shrink-0">{open ? '▼' : '▶'}</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+            <p className="text-xs font-medium text-rs-text leading-snug">{baseSubject || first.Subject || '—'}</p>
+            <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-semibold leading-none uppercase tracking-wide">
+              {emails.length} emails
+            </span>
+          </div>
+          <p className="text-[10px] text-rs-muted">{dateRange}</p>
+        </div>
+      </button>
+      {open && (
+        <div className="pl-4 pb-2">
+          {emails.map((e, i) => (
+            <ActivityItem key={e.Id || i} activity={e} compact prevOwner={i > 0 ? emails[i - 1].Owner?.Name : null} />
+          ))}
         </div>
       )}
     </div>
@@ -188,6 +318,77 @@ function computeCadence(activities) {
   return { ytd, qtd, mtd, wk };
 }
 
+function computeStageTimeline(historyRecords) {
+  if (!historyRecords?.length) return [];
+  const now = new Date();
+  return historyRecords.map((record, i) => {
+    const entryDate = new Date(record.CreatedDate);
+    const nextDate = historyRecords[i + 1] ? new Date(historyRecords[i + 1].CreatedDate) : now;
+    const days = differenceInDays(nextDate, entryDate);
+    const isCurrent = i === historyRecords.length - 1;
+    const stageConfig = STAGE_MAP[record.StageName];
+    const isOverdue = stageConfig?.dayLimit && days > stageConfig.dayLimit;
+    const daysOver = isOverdue ? days - stageConfig.dayLimit : 0;
+    return { stageName: record.StageName, entryDate, exitDate: isCurrent ? null : nextDate, days, isCurrent, isOverdue, daysOver, dayLimit: stageConfig?.dayLimit ?? null };
+  });
+}
+
+function StageTimeline({ historyRecords }) {
+  const stages = computeStageTimeline(historyRecords);
+  if (!stages.length) return <p className="text-xs text-rs-muted">No stage history found</p>;
+
+  return (
+    <div className="relative">
+      {/* Vertical connector line */}
+      <div className="absolute left-[7px] top-3 bottom-3 w-px bg-rs-border" />
+      <div className="space-y-0">
+        {stages.map((s, i) => (
+          <div key={i} className="flex items-start gap-3 py-2">
+            {/* Dot */}
+            <div className={`relative z-10 mt-1 shrink-0 w-3.5 h-3.5 rounded-full border-2 flex items-center justify-center
+              ${s.isCurrent
+                ? 'bg-rs-teal border-rs-teal'
+                : s.isOverdue
+                  ? 'bg-[#FFA91D] border-[#FFA91D]'
+                  : 'bg-white border-rs-teal'
+              }`}
+            />
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-xs font-medium leading-tight ${s.isCurrent ? 'text-rs-teal' : 'text-rs-text'}`}>
+                  {s.stageName}
+                </span>
+                {s.isCurrent && (
+                  <span className="text-[10px] bg-rs-teal/10 text-rs-teal px-1.5 py-0.5 rounded-full font-medium leading-none">
+                    current
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-[10px] text-rs-muted">
+                  {format(s.entryDate, 'MMM d')}
+                  {s.exitDate ? ` – ${format(s.exitDate, 'MMM d')}` : ' – now'}
+                </span>
+                <span className={`text-[10px] font-semibold ${s.isOverdue ? 'text-rs-overdueText' : 'text-rs-muted'}`}>
+                  {s.days}d
+                </span>
+                {s.isOverdue && (
+                  <span className="text-[10px] bg-[rgba(232,138,26,0.15)] text-rs-overdueText px-1.5 py-0.5 rounded-full font-medium leading-none">
+                    +{s.daysOver}d over
+                  </span>
+                )}
+                {!s.isOverdue && s.dayLimit && (
+                  <span className="text-[10px] text-green-600">✓</span>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function DealDetailPanel({ deal, onClose, tasks, events }) {
   const [account, setAccount] = useState(null);
   const [activities, setActivities] = useState(null);
@@ -195,6 +396,8 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
   const [loadingAccount, setLoadingAccount] = useState(false);
   const [loadingActivities, setLoadingActivities] = useState(false);
   const [loadingContacts, setLoadingContacts] = useState(false);
+  const [stageHistory, setStageHistory] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [showAllContacts, setShowAllContacts] = useState(false);
 
   useEffect(() => {
@@ -202,6 +405,7 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
     setAccount(null);
     setActivities(null);
     setContacts(null);
+    setStageHistory(null);
     setShowAllContacts(false);
 
     if (deal.AccountId) {
@@ -217,6 +421,12 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
         .catch(() => setContacts([]))
         .finally(() => setLoadingContacts(false));
     }
+
+    setLoadingHistory(true);
+    fetchOpportunityHistory(deal.Id)
+      .then(setStageHistory)
+      .catch(() => setStageHistory([]))
+      .finally(() => setLoadingHistory(false));
 
     if (tasks && events) {
       const merged = [
@@ -259,6 +469,7 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
   const arr = deal ? (deal.Annual_Recurring_Revenue_ARR__c ?? deal.Amount) : null;
 
   const cadence = activities ? computeCadence(activities) : null;
+  const groupedActivities = useMemo(() => activities ? groupActivities(activities) : null, [activities]);
   const cadenceMax = cadence?.ytd || 1;
 
   const visibleContacts = contacts
@@ -320,6 +531,16 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
               </p>
             </section>
           )}
+
+          {/* Stage History */}
+          <section>
+            <SectionLabel>Stage History</SectionLabel>
+            {loadingHistory ? (
+              <Skeleton rows={3} />
+            ) : (
+              <StageTimeline historyRecords={stageHistory} />
+            )}
+          </section>
 
           {/* Company Info */}
           <section>
@@ -402,11 +623,15 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
             <SectionLabel>Activity Feed</SectionLabel>
             {loadingActivities ? (
               <Skeleton rows={3} />
-            ) : activities?.length ? (
+            ) : groupedActivities?.length ? (
               <div>
-                {activities.map((a, i) => (
-                  <ActivityItem key={a.Id || i} activity={a} />
-                ))}
+                {groupedActivities.map((entry, i) =>
+                  entry.type === 'thread' ? (
+                    <ActivityThread key={i} emails={entry.item} />
+                  ) : (
+                    <ActivityItem key={entry.item.Id || i} activity={entry.item} />
+                  )
+                )}
               </div>
             ) : (
               <p className="text-xs text-rs-muted">No activity found this year</p>

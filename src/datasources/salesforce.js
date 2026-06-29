@@ -145,7 +145,7 @@ export async function fetchOpenOpportunities() {
 export async function fetchTasksThisQuarter() {
   // LIMIT caps pagination — enough for meaningful activity metrics
   return queryAll(
-    `SELECT Id, WhoId, WhatId, OwnerId, Owner.Name, Type, Subject, ActivityDate, CreatedDate, Status
+    `SELECT Id, WhoId, WhatId, What.Name, OwnerId, Owner.Name, Type, Subject, ActivityDate, CreatedDate, Status, Description
      FROM Task
      WHERE CreatedDate = THIS_QUARTER
      ORDER BY CreatedDate DESC
@@ -155,7 +155,7 @@ export async function fetchTasksThisQuarter() {
 
 export async function fetchEventsThisQuarter() {
   return queryAll(
-    `SELECT Id, WhatId, OwnerId, Owner.Name, Type, Subject, StartDateTime, EndDateTime
+    `SELECT Id, WhatId, What.Name, OwnerId, Owner.Name, Type, Subject, StartDateTime, EndDateTime, Description
      FROM Event
      WHERE StartDateTime = THIS_QUARTER
      ORDER BY StartDateTime DESC
@@ -242,6 +242,23 @@ export async function fetchOppsYTD() {
      WHERE IsWon = true
      AND CloseDate >= ${year}-01-01`
   );
+}
+
+export async function fetchOpportunityHistory(oppId) {
+  const cacheKey = `opp:history:${oppId}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  const { sessionId: sid, instanceUrl: base } = await getSession();
+  const soql = `SELECT StageName, CreatedDate FROM OpportunityHistory WHERE OpportunityId = '${oppId}' ORDER BY CreatedDate ASC`;
+  const proxied = `${base}/services/data/v60.0/query/?q=${encodeURIComponent(soql)}`.replace(/^https:\/\/[^/]+/, '/sf-api');
+
+  const res = await fetch(proxied, { headers: { Authorization: `Bearer ${sid}` } });
+  if (!res.ok) return [];
+  const json = await res.json();
+  const records = json.records || [];
+  cache.set(cacheKey, { data: records, timestamp: Date.now() });
+  return records;
 }
 
 export async function fetchAllReps() {

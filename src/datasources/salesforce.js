@@ -261,6 +261,79 @@ export async function fetchOpportunityHistory(oppId) {
   return records;
 }
 
+export async function fetchCampaigns() {
+  return queryAll(
+    `SELECT Id, Name, Type, Status, IsActive, NumberOfLeads, NumberOfContacts,
+     NumberOfOpportunities, NumberOfWonOpportunities, AmountWonOpportunities,
+     Campaign_Industry__c, OwnerId, Owner.Name, LastModifiedDate
+     FROM Campaign
+     ORDER BY IsActive DESC, LastModifiedDate DESC
+     LIMIT 500`
+  );
+}
+
+export async function fetchCampaignStatuses(campaignId) {
+  const cacheKey = `campaign:statuses:${campaignId}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  const { sessionId: sid, instanceUrl: base } = await getSession();
+  const soql = `SELECT Id, Label, IsDefault, HasResponded, SortOrder FROM CampaignMemberStatus WHERE CampaignId = '${campaignId}' ORDER BY SortOrder ASC`;
+  const proxied = `${base}/services/data/v60.0/query/?q=${encodeURIComponent(soql)}`.replace(/^https:\/\/[^/]+/, '/sf-api');
+
+  const res = await fetch(proxied, { headers: { Authorization: `Bearer ${sid}` } });
+  if (!res.ok) return [];
+  const json = await res.json();
+  const records = json.records || [];
+  cache.set(cacheKey, { data: records, timestamp: Date.now() });
+  return records;
+}
+
+export async function fetchCampaignMembers(campaignId) {
+  const cacheKey = `campaign:members:${campaignId}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  const { sessionId: sid, instanceUrl: base } = await getSession();
+  const soql = `SELECT Id, Name, FirstName, LastName, Title, Status, HasResponded,
+    ContactId, Contact.Name, Contact.Title, Contact.AccountId, LeadId, Lead.Name, Lead.Company,
+    CompanyOrAccount, Type, Email, CreatedDate, FirstRespondedDate
+    FROM CampaignMember WHERE CampaignId = '${campaignId}' ORDER BY Status ASC LIMIT 2000`;
+  const proxied = `${base}/services/data/v60.0/query/?q=${encodeURIComponent(soql)}`.replace(/^https:\/\/[^/]+/, '/sf-api');
+
+  let records = [];
+  let result = await (await fetch(proxied, { headers: { Authorization: `Bearer ${sid}` } })).json();
+  records = records.concat(result.records || []);
+  while (!result.done && result.nextRecordsUrl) {
+    const next = result.nextRecordsUrl.replace(/^\//, `${base}/`).replace(/^https:\/\/[^/]+/, '/sf-api');
+    result = await (await fetch(next, { headers: { Authorization: `Bearer ${sid}` } })).json();
+    records = records.concat(result.records || []);
+  }
+
+  cache.set(cacheKey, { data: records, timestamp: Date.now() });
+  return records;
+}
+
+export async function fetchCampaignOpportunities(campaignId) {
+  const cacheKey = `campaign:opps:${campaignId}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  const { sessionId: sid, instanceUrl: base } = await getSession();
+  const soql = `SELECT Id, Name, StageName, Annual_Recurring_Revenue_ARR__c, Amount,
+    AccountId, Account.Name, IsClosed, IsWon, CloseDate, CreatedDate, LastStageChangeDate,
+    OwnerId, Owner.Name
+    FROM Opportunity WHERE CampaignId = '${campaignId}' ORDER BY CreatedDate DESC`;
+  const proxied = `${base}/services/data/v60.0/query/?q=${encodeURIComponent(soql)}`.replace(/^https:\/\/[^/]+/, '/sf-api');
+
+  const res = await fetch(proxied, { headers: { Authorization: `Bearer ${sid}` } });
+  if (!res.ok) return [];
+  const json = await res.json();
+  const records = json.records || [];
+  cache.set(cacheKey, { data: records, timestamp: Date.now() });
+  return records;
+}
+
 export async function fetchAllReps() {
   // Only include reps who own at least one open opportunity (same filter as fetchOpenOpportunities)
   const opps = await queryAll(

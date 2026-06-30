@@ -276,15 +276,32 @@ function ActivityThread({ emails }) {
   );
 }
 
+function relativeDate(dateStr) {
+  if (!dateStr) return null;
+  const days = differenceInDays(new Date(), new Date(dateStr));
+  if (days === 0) return 'today';
+  if (days === 1) return '1d ago';
+  if (days < 7) return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days / 7)}w ago`;
+  if (days < 365) return `${Math.floor(days / 30)}mo ago`;
+  return `${Math.floor(days / 365)}y ago`;
+}
+
 function ContactItem({ contact }) {
   const name = [contact.FirstName, contact.LastName].filter(Boolean).join(' ');
+  const lastActive = relativeDate(contact.LastActivityDate);
   return (
     <div className="flex items-start gap-3 py-2 border-b border-rs-border/50 last:border-0">
       <div className="shrink-0 w-7 h-7 rounded-full bg-rs-teal/15 text-rs-teal flex items-center justify-center text-[11px] font-semibold">
         {(contact.FirstName?.[0] || '?')}{(contact.LastName?.[0] || '')}
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-rs-text leading-tight">{name}</p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-xs font-medium text-rs-text leading-tight">{name}</p>
+          {lastActive && (
+            <span className="text-[10px] text-rs-muted shrink-0">{lastActive}</span>
+          )}
+        </div>
         {contact.Title && <p className="text-[10px] text-rs-muted mt-0.5 leading-snug">{contact.Title}</p>}
         {contact.Email && (
           <a href={`mailto:${contact.Email}`} className="text-[10px] text-rs-teal hover:underline mt-0.5 block truncate">
@@ -292,11 +309,6 @@ function ContactItem({ contact }) {
           </a>
         )}
       </div>
-      {contact.Phone && (
-        <a href={`tel:${contact.Phone}`} className="text-[10px] text-rs-muted hover:text-rs-teal shrink-0 mt-0.5">
-          {contact.Phone}
-        </a>
-      )}
     </div>
   );
 }

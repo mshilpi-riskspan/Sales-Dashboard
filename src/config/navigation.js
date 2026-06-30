@@ -1,5 +1,6 @@
 import PipelineByStage from '../modules/pipeline/PipelineByStage';
 import RepKPIs from '../modules/repkpis/RepKPIs';
+import CampaignsPage from '../modules/campaigns/CampaignsPage';
 
 export const NAV_ITEMS = [
   {
@@ -16,6 +17,11 @@ export const NAV_ITEMS = [
     component: RepKPIs,
     filters: ['salesperson'],
   },
-  // To add a new module: { id, label, icon, component }
-  // Omit `filters` if the module doesn't use the salesperson filter
+  {
+    id: 'campaigns',
+    label: 'Campaigns',
+    icon: 'MegaphoneIcon',
+    component: CampaignsPage,
+    filters: [],
+  },
 ];

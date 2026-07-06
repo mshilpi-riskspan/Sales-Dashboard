@@ -1,6 +1,6 @@
-import { ChartBarIcon, UserGroupIcon, MegaphoneIcon, CalendarIcon, TrophyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, UserGroupIcon, MegaphoneIcon, CalendarIcon, CalendarDaysIcon, TrophyIcon, ExclamationTriangleIcon } from '@heroicons/react/24/outline';
 
-const ICON_MAP = { ChartBarIcon, UserGroupIcon, MegaphoneIcon, CalendarIcon, TrophyIcon, ExclamationTriangleIcon };
+const ICON_MAP = { ChartBarIcon, UserGroupIcon, MegaphoneIcon, CalendarIcon, CalendarDaysIcon, TrophyIcon, ExclamationTriangleIcon };
 
 export default function Sidebar({ navItems, activePage, onNavigate }) {
   return (

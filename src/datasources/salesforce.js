@@ -368,6 +368,20 @@ export async function fetchOpportunitiesClosingInYear(year) {
   );
 }
 
+export async function fetchEventsInYear(year) {
+  const cacheKey = `events:year:${year}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  return queryAll(
+    `SELECT Id, WhatId, What.Name, OwnerId, Owner.Name, Type, Subject, StartDateTime, EndDateTime, Description
+     FROM Event
+     WHERE StartDateTime >= ${year}-01-01T00:00:00Z AND StartDateTime <= ${year}-12-31T23:59:59Z
+     ORDER BY StartDateTime DESC
+     LIMIT 5000`
+  );
+}
+
 export async function fetchAllReps() {
   // Only include reps who own at least one open opportunity (same filter as fetchOpenOpportunities)
   const opps = await queryAll(

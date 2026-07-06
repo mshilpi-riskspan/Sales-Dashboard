@@ -334,6 +334,39 @@ export async function fetchCampaignOpportunities(campaignId) {
   return records;
 }
 
+export async function fetchClosedOppsInYear(year) {
+  const cacheKey = `opps:closed:${year}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  return queryAll(
+    `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
+     AccountId, Account.Name, CreatedDate, CloseDate, IsClosed, IsWon,
+     LeadSource, Description, ForecastCategoryName
+     FROM Opportunity
+     WHERE IsClosed = true
+     AND CloseDate >= ${year}-01-01 AND CloseDate <= ${year}-12-31
+     ORDER BY CloseDate DESC`
+  );
+}
+
+export async function fetchOpportunitiesClosingInYear(year) {
+  const cacheKey = `opps:closing:${year}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  return queryAll(
+    `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
+     AccountId, Account.Name, CreatedDate, LastStageChangeDate, CloseDate, NextStep,
+     ForecastCategoryName, IsClosed, IsWon
+     FROM Opportunity
+     WHERE CloseDate >= ${year}-01-01 AND CloseDate <= ${year}-12-31
+     AND (IsClosed = false OR IsWon = true)
+     AND StageName != 'Client Prospecting'
+     ORDER BY CloseDate ASC`
+  );
+}
+
 export async function fetchAllReps() {
   // Only include reps who own at least one open opportunity (same filter as fetchOpenOpportunities)
   const opps = await queryAll(

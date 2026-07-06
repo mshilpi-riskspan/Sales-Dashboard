@@ -531,8 +531,25 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
               {deal.ForecastCategoryName && (
                 <Row label="Forecast">{deal.ForecastCategoryName}</Row>
               )}
+              {deal.Loss_Reason__c && (
+                <Row label="Loss Reason">
+                  <span className="px-2 py-0.5 rounded-full bg-red-50 text-red-600 font-medium text-[11px]">
+                    {deal.Loss_Reason__c}
+                  </span>
+                </Row>
+              )}
             </div>
           </section>
+
+          {/* Loss explanation */}
+          {deal.Closed_Lost_Reason_Explanation__c && (
+            <section>
+              <SectionLabel>Loss Explanation</SectionLabel>
+              <p className="text-xs text-rs-text leading-relaxed bg-red-50/60 border border-red-100 rounded-lg px-3 py-2.5">
+                {deal.Closed_Lost_Reason_Explanation__c}
+              </p>
+            </section>
+          )}
 
           {/* Next Steps */}
           {deal.NextStep && (

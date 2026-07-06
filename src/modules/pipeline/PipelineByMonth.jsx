@@ -209,7 +209,7 @@ export default function PipelineByMonth() {
     const groups = Array.from({ length: 12 }, () => ({ deals: [], totalArr: 0 }));
     if (!filtered) return groups;
     for (const deal of filtered) {
-      if (!deal.CloseDate) continue;
+      if (!deal.CloseDate || !deal.Account?.Name) continue;
       const m = new Date(deal.CloseDate).getMonth();
       groups[m].deals.push(deal);
       groups[m].totalArr += deal.Annual_Recurring_Revenue_ARR__c ?? deal.Amount ?? 0;

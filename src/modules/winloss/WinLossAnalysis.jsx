@@ -112,10 +112,50 @@ function RepTable({ repRows }) {
   );
 }
 
+// ── Loss reason breakdown ─────────────────────────────────────────────────────
+function LossReasonBreakdown({ lost }) {
+  const reasonCounts = useMemo(() => {
+    const map = new Map();
+    for (const d of lost) {
+      const reason = d.Loss_Reason__c || 'Not Specified';
+      map.set(reason, (map.get(reason) || 0) + 1);
+    }
+    return Array.from(map.entries())
+      .map(([reason, count]) => ({ reason, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [lost]);
+
+  if (!lost.length) return null;
+  const max = reasonCounts[0]?.count || 1;
+
+  return (
+    <div className="rounded-card border border-rs-border bg-white overflow-hidden mb-6">
+      <div className="px-4 py-3 border-b border-rs-border">
+        <h3 className="text-sm font-semibold text-rs-text">Loss Reasons</h3>
+      </div>
+      <div className="px-4 py-3 space-y-2.5">
+        {reasonCounts.map(({ reason, count }) => (
+          <div key={reason} className="flex items-center gap-3">
+            <span className="text-xs text-rs-muted w-36 shrink-0 truncate" title={reason}>{reason}</span>
+            <div className="flex-1 bg-rs-surface rounded-full h-2 overflow-hidden">
+              <div
+                className="h-full bg-red-400 rounded-full transition-all"
+                style={{ width: `${(count / max) * 100}%` }}
+              />
+            </div>
+            <span className="text-xs font-semibold text-rs-text w-6 text-right shrink-0">{count}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Deal list ─────────────────────────────────────────────────────────────────
 function DealRow({ deal, onClick }) {
   const arr = deal.Annual_Recurring_Revenue_ARR__c ?? deal.Amount ?? 0;
   const isWon = deal.IsWon;
+  const reason = isWon ? deal.Won_Reason__c : deal.Loss_Reason__c;
   return (
     <tr
       onClick={() => onClick(deal)}
@@ -136,7 +176,14 @@ function DealRow({ deal, onClick }) {
       <td className="px-3 py-2 text-sm text-rs-muted whitespace-nowrap">
         {deal.CloseDate ? format(new Date(deal.CloseDate), 'MMM d') : '—'}
       </td>
-      <td className="px-3 py-2 text-xs text-rs-muted">{deal.ForecastCategoryName || '—'}</td>
+      <td className="px-3 py-2 text-xs text-rs-muted">{reason || '—'}</td>
+      <td className="px-3 py-2 text-xs text-rs-muted max-w-xs">
+        {deal.Closed_Lost_Reason_Explanation__c ? (
+          <span className="line-clamp-2" title={deal.Closed_Lost_Reason_Explanation__c}>
+            {deal.Closed_Lost_Reason_Explanation__c}
+          </span>
+        ) : '—'}
+      </td>
     </tr>
   );
 }
@@ -265,6 +312,9 @@ export default function WinLossAnalysis() {
       {/* ── Rep breakdown ──────────────────────────────────────────────────── */}
       <RepTable repRows={repRows} />
 
+      {/* ── Loss reason breakdown ──────────────────────────────────────────── */}
+      <LossReasonBreakdown lost={lost} />
+
       {/* ── Deal list ──────────────────────────────────────────────────────── */}
       <div className="rounded-card border border-rs-border bg-white overflow-hidden">
         <div className="flex items-center justify-between px-4 py-3 border-b border-rs-border">
@@ -292,7 +342,7 @@ export default function WinLossAnalysis() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                {['Account', 'Outcome', 'AE Owner', 'ARR', 'Close Date', 'Forecast Category'].map(h => (
+                {['Account', 'Outcome', 'AE Owner', 'ARR', 'Close Date', 'Reason', 'Explanation'].map(h => (
                   <th key={h} className="bg-rs-teal text-white px-3 py-2 text-left text-xs font-semibold tracking-wide">
                     {h}
                   </th>

@@ -68,7 +68,7 @@ function RiskDealRow({ deal, onClick }) {
       <td className="px-3 py-2 text-sm whitespace-nowrap">
         {deal.CloseDate ? (
           <span className={new Date(deal.CloseDate) < new Date() ? 'text-red-600 font-medium' : 'text-rs-muted'}>
-            {format(new Date(deal.CloseDate), 'MMM d, yyyy')}
+            {format(new Date(deal.CloseDate), 'MMM yyyy')}
           </span>
         ) : '—'}
       </td>

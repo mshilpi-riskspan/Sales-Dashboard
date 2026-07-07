@@ -108,7 +108,7 @@ function CampaignDropdown({ campaigns, selectedId, onChange }) {
   }
 
   return (
-    <div ref={ref} className="relative min-w-[280px] max-w-[420px]">
+    <div ref={ref} className="relative min-w-[420px] max-w-[620px]">
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between gap-2 border border-rs-border rounded-lg px-3 py-2 text-sm text-rs-text bg-white hover:border-rs-teal/60 focus:outline-none focus:ring-2 focus:ring-rs-teal/40 transition-colors"

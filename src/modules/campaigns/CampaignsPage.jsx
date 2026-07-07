@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { format, differenceInDays, startOfYear, startOfQuarter, startOfMonth, startOfWeek } from 'date-fns';
-import { ChevronDownIcon, ChevronUpIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
+import { ChevronDownIcon, ChevronUpIcon, CheckCircleIcon, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { fetchCampaigns, fetchCampaignStatuses, fetchCampaignMembers, fetchCampaignOpportunities, fetchAccountDetail, fetchAccountActivities } from '../../datasources/salesforce';
 import SlidePanel from '../../components/common/SlidePanel';
 import DealDetailPanel from '../../components/common/DealDetailPanel';
@@ -62,6 +62,111 @@ const STATUS_BADGE = {
   Completed: 'bg-gray-100 text-gray-500',
   Aborted: 'bg-red-50 text-red-600',
 };
+
+// ── Searchable campaign dropdown ─────────────────────────────────────────────
+function CampaignDropdown({ campaigns, selectedId, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef(null);
+  const inputRef = useRef(null);
+
+  const selected = campaigns.find(c => c.Id === selectedId);
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return campaigns;
+    const q = search.toLowerCase();
+    const matches = campaigns.filter(c => c.Name.toLowerCase().includes(q));
+    // Sort: starts-with first, then contains
+    return matches.sort((a, b) => {
+      const aStarts = a.Name.toLowerCase().startsWith(q);
+      const bStarts = b.Name.toLowerCase().startsWith(q);
+      if (aStarts && !bStarts) return -1;
+      if (!aStarts && bStarts) return 1;
+      return 0;
+    });
+  }, [campaigns, search]);
+
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+        setSearch('');
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (open) setTimeout(() => inputRef.current?.focus(), 50);
+  }, [open]);
+
+  function select(id) {
+    onChange(id);
+    setOpen(false);
+    setSearch('');
+  }
+
+  return (
+    <div ref={ref} className="relative min-w-[280px] max-w-[420px]">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between gap-2 border border-rs-border rounded-lg px-3 py-2 text-sm text-rs-text bg-white hover:border-rs-teal/60 focus:outline-none focus:ring-2 focus:ring-rs-teal/40 transition-colors"
+      >
+        <span className="truncate text-left flex-1">
+          {selected ? selected.Name : 'Select campaign…'}
+        </span>
+        <ChevronDownIcon className={`h-4 w-4 text-rs-muted shrink-0 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-rs-border rounded-lg shadow-lg overflow-hidden">
+          {/* Search input */}
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-rs-border">
+            <MagnifyingGlassIcon className="h-3.5 w-3.5 text-rs-muted shrink-0" />
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Search campaigns…"
+              className="flex-1 text-sm text-rs-text placeholder-rs-muted bg-transparent focus:outline-none"
+            />
+            {search && (
+              <button onClick={() => setSearch('')} className="text-rs-muted hover:text-rs-text text-xs leading-none">✕</button>
+            )}
+          </div>
+
+          {/* Options list */}
+          <ul className="max-h-64 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <li className="px-3 py-3 text-sm text-rs-muted text-center">No campaigns match</li>
+            ) : (
+              filtered.map(c => {
+                const count = (c.NumberOfContacts || 0) + (c.NumberOfLeads || 0);
+                const isSelected = c.Id === selectedId;
+                return (
+                  <li key={c.Id}>
+                    <button
+                      onClick={() => select(c.Id)}
+                      className={`w-full text-left px-3 py-2.5 text-sm hover:bg-rs-surface transition-colors flex items-center justify-between gap-3
+                        ${isSelected ? 'bg-rs-teal/5 text-rs-teal font-medium' : 'text-rs-text'}`}
+                    >
+                      <span className="truncate">{c.Name}</span>
+                      {count > 0 && (
+                        <span className="text-[10px] text-rs-muted shrink-0">{count} contacts</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ── Skeleton loader ──────────────────────────────────────────────────────────
 function Skeleton({ rows = 4 }) {
@@ -620,7 +725,7 @@ export default function CampaignsPage() {
   const [activeMember, setActiveMember] = useState(null);
   const [activeDeal, setActiveDeal] = useState(null);
 
-  const [showActiveOnly, setShowActiveOnly] = useState(true);
+  const [showActiveOnly, setShowActiveOnly] = useState(false);
   const [typeFilter, setTypeFilter] = useState('All');
   const [oppsExpanded, setOppsExpanded] = useState(true);
 
@@ -699,25 +804,11 @@ export default function CampaignsPage() {
         {loadingCampaigns ? (
           <div className="h-9 w-72 rounded-lg bg-rs-border animate-pulse" />
         ) : (
-          <select
-            value={selectedId || ''}
-            onChange={e => setSelectedId(e.target.value)}
-            className="border border-rs-border rounded-lg px-3 py-2 text-sm text-rs-text bg-white
-                       focus:outline-none focus:ring-2 focus:ring-rs-teal/40
-                       min-w-[280px] max-w-[420px]"
-          >
-            {filteredCampaigns.length === 0 && (
-              <option value="">No campaigns match filter</option>
-            )}
-            {filteredCampaigns.map(c => (
-              <option key={c.Id} value={c.Id}>
-                {c.Name}
-                {(c.NumberOfContacts + c.NumberOfLeads) > 0
-                  ? ` · ${c.NumberOfContacts + c.NumberOfLeads} contacts`
-                  : ''}
-              </option>
-            ))}
-          </select>
+          <CampaignDropdown
+            campaigns={filteredCampaigns}
+            selectedId={selectedId}
+            onChange={setSelectedId}
+          />
         )}
 
         <label className="flex items-center gap-1.5 text-sm text-rs-muted cursor-pointer select-none">

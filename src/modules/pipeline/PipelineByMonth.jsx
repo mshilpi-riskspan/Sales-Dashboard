@@ -1,9 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
-import { format, differenceInDays } from 'date-fns';
-import {
-  ChevronLeftIcon, ChevronRightIcon,
-  ChevronDownIcon, ChevronUpIcon,
-} from '@heroicons/react/24/outline';
+import { format, differenceInDays, startOfMonth, subMonths, addMonths, getYear, getMonth, isSameMonth } from 'date-fns';
+import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, Cell, LabelList,
@@ -41,17 +38,19 @@ const ChartTooltip = ({ active, payload, label }) => {
   );
 };
 
-function MonthChart({ monthData, selectedYear }) {
+function MonthChart({ windowMonths }) {
   const now = new Date();
-  const currentMonth = now.getFullYear() === selectedYear ? now.getMonth() : -1;
-
-  const data = MONTH_SHORT.map((name, i) => ({
-    name,
-    count: monthData[i]?.deals.length || 0,
-    totalArr: monthData[i]?.totalArr || 0,
-    isPast: i < currentMonth,
-    isCurrent: i === currentMonth,
-  }));
+  const data = windowMonths.map(({ date, deals, totalArr }) => {
+    const isPast = date < startOfMonth(now);
+    const isCurrent = isSameMonth(date, now);
+    // Show year on the label when it changes (e.g. Jan '27)
+    const prevYear = date.getFullYear() !== windowMonths[0].date.getFullYear() &&
+      date.getMonth() === 0;
+    const label = prevYear
+      ? `${MONTH_SHORT[date.getMonth()]} '${String(date.getFullYear()).slice(2)}`
+      : MONTH_SHORT[date.getMonth()];
+    return { name: label, count: deals.length, totalArr, isPast, isCurrent };
+  });
 
   return (
     <ResponsiveContainer width="100%" height={120}>
@@ -116,14 +115,13 @@ function MonthDealRow({ deal, onClick }) {
 }
 
 // ── Month card ────────────────────────────────────────────────────────────────
-function MonthCard({ monthName, monthIndex, selectedYear, deals, onDealClick }) {
+function MonthCard({ monthDate, deals, onDealClick }) {
   const [expanded, setExpanded] = useState(true);
 
   const now = new Date();
-  const currentMonth = now.getMonth();
-  const currentYear = now.getFullYear();
-  const isPast = selectedYear < currentYear || (selectedYear === currentYear && monthIndex < currentMonth);
-  const isCurrent = selectedYear === currentYear && monthIndex === currentMonth;
+  const isPast = monthDate < startOfMonth(now);
+  const isCurrent = isSameMonth(monthDate, now);
+  const monthName = format(monthDate, 'MMMM yyyy');
 
   const totalArr = deals.reduce((s, d) => s + (d.Annual_Recurring_Revenue_ARR__c ?? d.Amount ?? 0), 0);
 
@@ -183,42 +181,54 @@ function MonthCard({ monthName, monthIndex, selectedYear, deals, onDealClick }) 
   );
 }
 
+// Rolling window: 1 month prior + current + 11 ahead = 13 months
+function buildWindow() {
+  const windowStart = startOfMonth(subMonths(new Date(), 1));
+  return Array.from({ length: 13 }, (_, i) => addMonths(windowStart, i));
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function PipelineByMonth() {
   const { triggerRefresh, refreshCount } = useDashboard();
-  const currentYear = new Date().getFullYear();
-  const [selectedYear, setSelectedYear] = useState(currentYear);
   const [rawData, setRawData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeDeal, setActiveDeal] = useState(null);
   const [showAllDeals, setShowAllDeals] = useState(false);
 
+  // Window is always computed fresh relative to today
+  const windowDates = useMemo(() => buildWindow(), []);
+  const windowYears = useMemo(() => [...new Set(windowDates.map(d => getYear(d)))], [windowDates]);
+
   useEffect(() => {
     setLoading(true);
     setError(null);
-    fetchOpportunitiesClosingInYear(selectedYear)
-      .then(setRawData)
+    Promise.all(windowYears.map(y => fetchOpportunitiesClosingInYear(y)))
+      .then(results => setRawData(results.flat()))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [selectedYear, refreshCount]);
+  }, [windowYears.join(','), refreshCount]);
 
   const filtered = useRepFilter(rawData);
 
-  const monthData = useMemo(() => {
-    const groups = Array.from({ length: 12 }, () => ({ deals: [], totalArr: 0 }));
-    if (!filtered) return groups;
-    for (const deal of filtered) {
-      if (!deal.CloseDate || !deal.Account?.Name) continue;
-      const m = new Date(deal.CloseDate).getMonth();
-      groups[m].deals.push(deal);
-      groups[m].totalArr += deal.Annual_Recurring_Revenue_ARR__c ?? deal.Amount ?? 0;
-    }
-    return groups;
-  }, [filtered]);
+  const windowMonths = useMemo(() => {
+    return windowDates.map(date => {
+      const slot = { date, deals: [], totalArr: 0 };
+      if (!filtered) return slot;
+      for (const deal of filtered) {
+        if (!deal.CloseDate || !deal.Account?.Name) continue;
+        const d = new Date(deal.CloseDate);
+        if (getYear(d) === getYear(date) && getMonth(d) === getMonth(date)) {
+          slot.deals.push(deal);
+          slot.totalArr += deal.Annual_Recurring_Revenue_ARR__c ?? deal.Amount ?? 0;
+        }
+      }
+      return slot;
+    });
+  }, [filtered, windowDates]);
 
-  const totalDeals = filtered?.length || 0;
-  const totalArr = filtered?.reduce((s, d) => s + (d.Annual_Recurring_Revenue_ARR__c ?? d.Amount ?? 0), 0) || 0;
+  const totalDeals = windowMonths.reduce((s, m) => s + m.deals.length, 0);
+  const totalArr = windowMonths.reduce((s, m) => s + m.totalArr, 0);
 
   if (loading) {
     return (
@@ -238,48 +248,28 @@ export default function PipelineByMonth() {
       <div className="rounded-card border border-rs-border bg-white p-4 mb-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-rs-text">Monthly Close Overview</h2>
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setShowAllDeals(true)}
-              className="flex gap-4 text-xs hover:opacity-80 transition-opacity"
-            >
-              <span className="text-rs-muted">
-                <span className="font-bold text-rs-text text-sm underline decoration-dotted">{totalDeals}</span> deals
-              </span>
-              <span className="text-rs-muted">
-                <span className="font-bold text-rs-teal text-sm underline decoration-dotted">{formatARR(totalArr)}</span> total ARR
-              </span>
-            </button>
-            {/* Year selector */}
-            <div className="flex items-center gap-1 border border-rs-border rounded-lg px-2 py-1">
-              <button
-                onClick={() => setSelectedYear(y => y - 1)}
-                className="text-rs-muted hover:text-rs-text transition-colors p-0.5"
-              >
-                <ChevronLeftIcon className="h-3.5 w-3.5" />
-              </button>
-              <span className="text-sm font-semibold text-rs-text w-12 text-center">{selectedYear}</span>
-              <button
-                onClick={() => setSelectedYear(y => y + 1)}
-                className="text-rs-muted hover:text-rs-text transition-colors p-0.5"
-              >
-                <ChevronRightIcon className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          </div>
+          <button
+            onClick={() => setShowAllDeals(true)}
+            className="flex gap-4 text-xs hover:opacity-80 transition-opacity"
+          >
+            <span className="text-rs-muted">
+              <span className="font-bold text-rs-text text-sm underline decoration-dotted">{totalDeals}</span> deals
+            </span>
+            <span className="text-rs-muted">
+              <span className="font-bold text-rs-teal text-sm underline decoration-dotted">{formatARR(totalArr)}</span> total ARR
+            </span>
+          </button>
         </div>
-        <MonthChart monthData={monthData} selectedYear={selectedYear} />
+        <MonthChart windowMonths={windowMonths} />
       </div>
 
-      {/* ── Month cards — all 12, empty ones show placeholder ─────────────── */}
+      {/* ── Month cards — 13 rolling months ───────────────────────────────── */}
       <div className="space-y-4">
-        {MONTH_NAMES.map((name, i) => (
+        {windowMonths.map(({ date, deals }) => (
           <MonthCard
-            key={i}
-            monthName={name}
-            monthIndex={i}
-            selectedYear={selectedYear}
-            deals={monthData[i].deals}
+            key={`${getYear(date)}-${getMonth(date)}`}
+            monthDate={date}
+            deals={deals}
             onDealClick={setActiveDeal}
           />
         ))}

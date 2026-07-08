@@ -174,7 +174,7 @@ function DealRow({ deal, onClick }) {
       <td className="px-3 py-2 text-sm text-rs-muted">{deal.Owner?.Name || '—'}</td>
       <td className="px-3 py-2 text-sm font-medium text-rs-text">{formatARR(arr)}</td>
       <td className="px-3 py-2 text-sm text-rs-muted whitespace-nowrap">
-        {deal.CloseDate ? format(new Date(deal.CloseDate), 'MMM d') : '—'}
+        {deal.CloseDate ? format(new Date(deal.CloseDate + 'T00:00:00'), 'MMM d') : '—'}
       </td>
       <td className="px-3 py-2 text-xs text-rs-muted">{reason || '—'}</td>
       <td className="px-3 py-2 text-xs text-rs-muted max-w-xs">
@@ -217,7 +217,7 @@ export default function WinLossAnalysis() {
     const monthData = Array.from({ length: 12 }, () => ({ won: [], lost: [] }));
     for (const d of filtered) {
       if (!d.CloseDate) continue;
-      const m = new Date(d.CloseDate).getMonth();
+      const m = new Date(d.CloseDate + 'T00:00:00').getMonth();
       if (d.IsWon) monthData[m].won.push(d);
       else monthData[m].lost.push(d);
     }

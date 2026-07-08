@@ -18,7 +18,7 @@ export default function PipelineListPanel({ deals, onClose, onDealClick }) {
       if (sortBy === 'arr') {
         return (b.Annual_Recurring_Revenue_ARR__c ?? b.Amount ?? 0) - (a.Annual_Recurring_Revenue_ARR__c ?? a.Amount ?? 0);
       }
-      return new Date(a.CloseDate || 0) - new Date(b.CloseDate || 0);
+      return new Date((a.CloseDate || 0) + 'T00:00:00') - new Date((b.CloseDate || 0) + 'T00:00:00');
     });
   }, [deals, sortBy]);
 
@@ -61,7 +61,7 @@ export default function PipelineListPanel({ deals, onClose, onDealClick }) {
           <tbody>
             {sorted.map((deal) => {
               const arr = deal.Annual_Recurring_Revenue_ARR__c ?? deal.Amount;
-              const isPast = deal.CloseDate && new Date(deal.CloseDate) < new Date();
+              const isPast = deal.CloseDate && new Date(deal.CloseDate + 'T00:00:00') < new Date();
               return (
                 <tr
                   key={deal.Id}
@@ -74,7 +74,7 @@ export default function PipelineListPanel({ deals, onClose, onDealClick }) {
                   <td className="py-2 pr-3 text-xs text-rs-muted">{deal.StageName}</td>
                   <td className="py-2 pr-3 text-xs text-right font-semibold text-rs-text">{formatARR(arr)}</td>
                   <td className={`py-2 text-xs text-right ${isPast ? 'text-rs-overdueText font-medium' : 'text-rs-muted'}`}>
-                    {deal.CloseDate ? format(new Date(deal.CloseDate), 'MMM d') : '—'}
+                    {deal.CloseDate ? format(new Date(deal.CloseDate + 'T00:00:00'), 'MMM d') : '—'}
                   </td>
                 </tr>
               );

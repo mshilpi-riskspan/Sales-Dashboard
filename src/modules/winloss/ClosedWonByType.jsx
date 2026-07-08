@@ -99,7 +99,7 @@ function GroupCard({ type, deals, onDealClick }) {
               <tbody>
                 {deals.map(deal => {
                   const daysToClose = deal.CloseDate && deal.CreatedDate
-                    ? differenceInDays(new Date(deal.CloseDate), new Date(deal.CreatedDate))
+                    ? differenceInDays(new Date(deal.CloseDate + 'T00:00:00'), new Date(deal.CreatedDate))
                     : null;
                   return (
                     <tr
@@ -132,7 +132,7 @@ function GroupCard({ type, deals, onDealClick }) {
                         {daysToClose !== null ? daysToClose : '—'}
                       </td>
                       <td className="px-3 py-2 text-sm text-rs-muted whitespace-nowrap">
-                        {deal.CloseDate ? format(new Date(deal.CloseDate), 'MMM d, yyyy') : '—'}
+                        {deal.CloseDate ? format(new Date(deal.CloseDate + 'T00:00:00'), 'MMM d, yyyy') : '—'}
                       </td>
                     </tr>
                   );

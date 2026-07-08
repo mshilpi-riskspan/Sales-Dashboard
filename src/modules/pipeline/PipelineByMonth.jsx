@@ -107,7 +107,7 @@ function MonthDealRow({ deal, onClick }) {
       <td className="px-3 py-2 text-sm text-rs-muted">{deal.Owner?.Name || '—'}</td>
       <td className="px-3 py-2 text-sm font-medium text-rs-text">{formatARR(arr)}</td>
       <td className="px-3 py-2 text-sm text-rs-muted whitespace-nowrap">
-        {deal.CloseDate ? format(new Date(deal.CloseDate), 'MMM d') : '—'}
+        {deal.CloseDate ? format(new Date(deal.CloseDate + 'T00:00:00'), 'MMM d') : '—'}
       </td>
       <td className="px-3 py-2 text-sm text-rs-muted whitespace-nowrap">{daysInStage}d</td>
     </tr>
@@ -217,7 +217,7 @@ export default function PipelineByMonth() {
       if (!filtered) return slot;
       for (const deal of filtered) {
         if (!deal.CloseDate || !deal.Account?.Name) continue;
-        const d = new Date(deal.CloseDate);
+        const d = new Date(deal.CloseDate + 'T00:00:00');
         if (getYear(d) === getYear(date) && getMonth(d) === getMonth(date)) {
           slot.deals.push(deal);
           slot.totalArr += deal.Annual_Recurring_Revenue_ARR__c ?? deal.Amount ?? 0;

@@ -28,7 +28,7 @@ function classifyDeals(deals) {
     const stageConfig = STAGE_MAP[deal.StageName];
     const daysInStage = differenceInDays(today, new Date(deal.LastStageChangeDate || deal.CreatedDate));
     const isOverdue = stageConfig?.dayLimit && daysInStage > stageConfig.dayLimit;
-    const isPastClose = deal.CloseDate && new Date(deal.CloseDate) < today;
+    const isPastClose = deal.CloseDate && new Date(deal.CloseDate + 'T00:00:00') < today;
 
     if (isPastClose) {
       pastCloseDate.push({ ...deal, _daysInStage: daysInStage, _daysOver: isOverdue ? daysInStage - stageConfig.dayLimit : 0 });
@@ -40,7 +40,7 @@ function classifyDeals(deals) {
   }
 
   // Sort each category by urgency (most days over / oldest close date first)
-  pastCloseDate.sort((a, b) => new Date(a.CloseDate) - new Date(b.CloseDate));
+  pastCloseDate.sort((a, b) => new Date(a.CloseDate + 'T00:00:00') - new Date(b.CloseDate + 'T00:00:00'));
   overdueInStage.sort((a, b) => b._daysOver - a._daysOver);
   noNextStep.sort((a, b) => b._daysInStage - a._daysInStage);
 
@@ -67,8 +67,8 @@ function RiskDealRow({ deal, onClick }) {
       <td className="px-3 py-2 text-sm font-medium text-rs-text">{formatARR(arr)}</td>
       <td className="px-3 py-2 text-sm whitespace-nowrap">
         {deal.CloseDate ? (
-          <span className={new Date(deal.CloseDate) < new Date() ? 'text-red-600 font-medium' : 'text-rs-muted'}>
-            {format(new Date(deal.CloseDate), 'MMM yyyy')}
+          <span className={new Date(deal.CloseDate + 'T00:00:00') < new Date() ? 'text-red-600 font-medium' : 'text-rs-muted'}>
+            {format(new Date(deal.CloseDate + 'T00:00:00'), 'MMM yyyy')}
           </span>
         ) : '—'}
       </td>

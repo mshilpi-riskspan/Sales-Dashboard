@@ -523,8 +523,8 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
               </Row>
               {deal.CloseDate && (
                 <Row label="Close Date">
-                  <span className={new Date(deal.CloseDate) < new Date() && !deal.IsClosed ? 'text-rs-overdueText font-medium' : ''}>
-                    {format(new Date(deal.CloseDate), 'MMM d, yyyy')}
+                  <span className={new Date(deal.CloseDate + 'T00:00:00') < new Date() && !deal.IsClosed ? 'text-rs-overdueText font-medium' : ''}>
+                    {format(new Date(deal.CloseDate + 'T00:00:00'), 'MMM d, yyyy')}
                   </span>
                 </Row>
               )}

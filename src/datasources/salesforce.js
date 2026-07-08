@@ -138,6 +138,7 @@ export async function fetchOpenOpportunities() {
      FROM Opportunity
      WHERE IsClosed = false
      AND StageName != 'Client Prospecting'
+     AND Type != 'Renewal'
      ORDER BY CreatedDate DESC`
   );
 }

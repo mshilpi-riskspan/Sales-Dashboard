@@ -503,6 +503,9 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
           <section>
             <SectionLabel>Deal</SectionLabel>
             <div className="divide-y divide-rs-border/50">
+              <Row label="Opportunity">
+                <span className="text-rs-text font-medium text-xs">{deal.Name}</span>
+              </Row>
               <Row label="Stage">
                 <span className="px-2 py-0.5 rounded-full bg-rs-teal/10 text-rs-teal font-medium text-[11px]">
                   {deal.StageName}

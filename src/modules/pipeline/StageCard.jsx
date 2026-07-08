@@ -37,6 +37,11 @@ export default function StageCard({ stage, deals, onDealClick }) {
             {stage.order}
           </span>
           <h3 className="text-sm font-semibold text-rs-text">{stage.name}</h3>
+          {stage.dayLimit && (
+            <span className="text-[11px] text-rs-muted font-medium bg-rs-border/60 rounded px-1.5 py-0.5">
+              {stage.dayLimit}d goal
+            </span>
+          )}
           <StageInfoTooltip stage={stage} />
         </div>
         <div className="flex items-center gap-3">
@@ -79,7 +84,10 @@ export default function StageCard({ stage, deals, onDealClick }) {
                 </tr>
               </thead>
               <tbody>
-                {deals.map((deal) => (
+                {[...deals].sort((a, b) =>
+                  (b.Annual_Recurring_Revenue_ARR__c ?? b.Amount ?? 0) -
+                  (a.Annual_Recurring_Revenue_ARR__c ?? a.Amount ?? 0)
+                ).map((deal) => (
                   <DealRow key={deal.Id} deal={deal} stageConfig={stage} onClick={onDealClick} />
                 ))}
               </tbody>

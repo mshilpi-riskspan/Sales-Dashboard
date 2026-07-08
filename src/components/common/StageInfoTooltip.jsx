@@ -56,7 +56,7 @@ export default function StageInfoTooltip({ stage }) {
             </div>
             {stage.dayLimit && (
               <div>
-                <p className="font-semibold text-rs-muted uppercase tracking-wide text-[10px] mb-1">Days Limit</p>
+                <p className="font-semibold text-rs-muted uppercase tracking-wide text-[10px] mb-1">Days Goal</p>
                 <p>{stage.dayLimit} days</p>
               </div>
             )}

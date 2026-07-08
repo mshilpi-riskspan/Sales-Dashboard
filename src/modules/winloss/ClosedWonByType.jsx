@@ -34,9 +34,7 @@ const TYPE_STYLE = {
 
 function formatARR(v) {
   if (!v && v !== 0) return '—';
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(2)}M`;
-  if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
-  return `$${v}`;
+  return `$${Math.round(v).toLocaleString()}`;
 }
 
 function StatChip({ label, value, accent = false }) {

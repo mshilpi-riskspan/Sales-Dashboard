@@ -6,7 +6,12 @@ import {
   ResponsiveContainer, Cell, LabelList,
 } from 'recharts';
 import { fetchOpportunitiesClosingInYear } from '../../datasources/salesforce';
+import { SALES_STAGES } from '../../config/salesStages';
 import { useRepFilter } from '../../hooks/useRepFilter';
+
+const PIPELINE_STAGES = new Set(
+  SALES_STAGES.filter(s => s.name !== 'Closed Won').map(s => s.name)
+);
 import DealDetailPanel from '../../components/common/DealDetailPanel';
 import PipelineListPanel from './PipelineListPanel';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -217,6 +222,7 @@ export default function PipelineByMonth() {
       if (!filtered) return slot;
       for (const deal of filtered) {
         if (!deal.CloseDate || !deal.Account?.Name) continue;
+        if (!PIPELINE_STAGES.has(deal.StageName)) continue;
         const d = new Date(deal.CloseDate + 'T00:00:00');
         if (getYear(d) === getYear(date) && getMonth(d) === getMonth(date)) {
           slot.deals.push(deal);

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { differenceInDays, format, startOfYear, startOfQuarter, startOfMonth, startOfWeek } from 'date-fns';
+import { differenceInDays, format, subDays } from 'date-fns';
 import SlidePanel from './SlidePanel';
 import { fetchAccountDetail, fetchAccountActivities, fetchAccountContacts, fetchOpportunityHistory } from '../../datasources/salesforce';
 import { STAGE_MAP } from '../../config/salesStages';
@@ -315,19 +315,13 @@ function ContactItem({ contact }) {
 
 function computeCadence(activities) {
   const now = new Date();
-  const yearStart = startOfYear(now);
-  const quarterStart = startOfQuarter(now);
-  const monthStart = startOfMonth(now);
-  const weekStart = startOfWeek(now, { weekStartsOn: 1 });
-
   const getDate = (a) => new Date(a.ActivityDate || a.StartDateTime || a.CreatedDate || 0);
 
-  const ytd = activities.filter((a) => getDate(a) >= yearStart).length;
-  const qtd = activities.filter((a) => getDate(a) >= quarterStart).length;
-  const mtd = activities.filter((a) => getDate(a) >= monthStart).length;
-  const wk = activities.filter((a) => getDate(a) >= weekStart).length;
+  const l7   = activities.filter((a) => getDate(a) >= subDays(now, 7)).length;
+  const l90  = activities.filter((a) => getDate(a) >= subDays(now, 90)).length;
+  const l365 = activities.filter((a) => getDate(a) >= subDays(now, 365)).length;
 
-  return { ytd, qtd, mtd, wk };
+  return { l7, l90, l365 };
 }
 
 function computeStageTimeline(historyRecords) {
@@ -482,7 +476,7 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
 
   const cadence = activities ? computeCadence(activities) : null;
   const groupedActivities = useMemo(() => activities ? groupActivities(activities) : null, [activities]);
-  const cadenceMax = cadence?.ytd || 1;
+  const cadenceMax = cadence?.l365 || 1;
 
   const visibleContacts = contacts
     ? (showAllContacts ? contacts : contacts.slice(0, 5))
@@ -653,12 +647,11 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
           {/* Meeting Cadence */}
           {cadence && (
             <section>
-              <SectionLabel>Activity Cadence (YTD)</SectionLabel>
+              <SectionLabel>Activity Cadence</SectionLabel>
               <div className="space-y-2.5">
-                <CadenceBar label="This Year" count={cadence.ytd} max={cadenceMax} />
-                <CadenceBar label="This Qtr" count={cadence.qtd} max={cadenceMax} />
-                <CadenceBar label="This Mo" count={cadence.mtd} max={cadenceMax} />
-                <CadenceBar label="This Week" count={cadence.wk} max={cadenceMax} />
+                <CadenceBar label="Last 365 days" count={cadence.l365} max={cadenceMax} />
+                <CadenceBar label="Last 90 days"  count={cadence.l90}  max={cadenceMax} />
+                <CadenceBar label="Last 7 days"   count={cadence.l7}   max={cadenceMax} />
               </div>
             </section>
           )}

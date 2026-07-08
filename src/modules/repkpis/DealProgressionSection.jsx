@@ -23,8 +23,8 @@ export default function DealProgressionSection({ metrics, loading, onDrill }) {
         />
         <KpiCard
           title="Avg Days / Stage"
-          value="—"
-          subtitle="Requires stage history (OpportunityFieldHistory)"
+          value={metrics?.avgDaysInStage}
+          subtitle="Average days in current stage across all open deals"
           category="dealProgression"
           loading={loading}
         />

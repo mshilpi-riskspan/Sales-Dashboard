@@ -1,4 +1,4 @@
-import { differenceInWeeks, differenceInCalendarMonths, startOfQuarter, startOfYear } from 'date-fns';
+import { differenceInWeeks, differenceInCalendarMonths, differenceInDays, startOfQuarter, endOfQuarter } from 'date-fns';
 
 function arrOrAmount(opp) {
   return opp.Annual_Recurring_Revenue_ARR__c ?? opp.Amount ?? 0;
@@ -28,13 +28,14 @@ function formatPct(v) {
   return `${Math.round(v)}%`;
 }
 
-export function computeMetrics(tasks, events, oppsQtr, oppsYtd, repId = null) {
+export function computeMetrics(tasks, events, oppsQtr, oppsYtd, openOpps, repId = null) {
   const filterRep = (arr) => repId ? arr.filter((r) => r.OwnerId === repId) : arr;
 
   const repTasks = filterRep(tasks || []);
   const repEvents = filterRep(events || []);
   const repOppsQtr = filterRep(oppsQtr || []);
   const repOppsYtd = filterRep(oppsYtd || []);
+  const repOpenOpps = filterRep(openOpps || []);
 
   // Activity
   const outboundEmails = repTasks.filter(
@@ -56,21 +57,38 @@ export function computeMetrics(tasks, events, oppsQtr, oppsYtd, repId = null) {
     .filter((o) => !o.IsClosed)
     .reduce((s, o) => s + arrOrAmount(o), 0);
 
-  // Deal Progression
-  const openOpps = repOppsQtr.filter((o) => !o.IsClosed);
-  const technicalFitDeals = openOpps.filter((o) => o.StageName === 'Technical Fit Agreement').length;
+  // Deal Progression — restricted to core pipeline stages only
+  const PIPELINE_STAGES = new Set([
+    'Initial Demo / SQL', 'Technical Fit Agreement', 'Proposal (pricing) Delivered',
+    'Trial', 'Negotiation & Decision Making', 'Contract Sent for Signature',
+  ]);
+  const pipelineOpenOpps = repOpenOpps.filter((o) => PIPELINE_STAGES.has(o.StageName));
+  const qtrOpenOpps = repOppsQtr.filter((o) => !o.IsClosed);
+  const technicalFitDeals = pipelineOpenOpps.filter((o) => o.StageName === 'Technical Fit Agreement').length;
 
-  // Trial → Proposal: opps currently at Proposal stage or later that came from Trial
-  // Approximation: count opps currently at stage >= 3 (Proposal or later)
-  const laterStages = new Set(['Proposal (pricing) Delivered', 'Trial', 'Negotiation & Decision Making', 'Contract Sent for Signature', 'Closed Won']);
-  const trialAndLater = repOppsQtr.filter((o) => laterStages.has(o.StageName));
+  // Trial → Proposal: pipeline deals at Trial or later
+  const laterStages = new Set(['Proposal (pricing) Delivered', 'Trial', 'Negotiation & Decision Making', 'Contract Sent for Signature']);
+  const trialAndLater = pipelineOpenOpps.filter((o) => laterStages.has(o.StageName));
   const trialToProposalRate = trialAndLater.length > 0
     ? (trialAndLater.filter((o) => o.StageName !== 'Trial').length / trialAndLater.length) * 100
     : null;
 
-  // Revenue
-  const arrClosedQtr = repOppsQtr
-    .filter((o) => o.IsWon)
+  // Avg Days in Stage: average across pipeline deals only
+  const now = new Date();
+  const qtrStart = startOfQuarter(now);
+  const qtrEnd = endOfQuarter(now);
+  const openWithStageDate = pipelineOpenOpps.filter((o) => o.LastStageChangeDate || o.CreatedDate);
+  const avgDaysInStage = openWithStageDate.length > 0
+    ? Math.round(openWithStageDate.reduce((s, o) => s + differenceInDays(now, new Date(o.LastStageChangeDate || o.CreatedDate)), 0) / openWithStageDate.length)
+    : null;
+
+  // Revenue — use YTD data filtered to current quarter close dates (oppsQtr uses CreatedDate which misses prior-quarter deals)
+  const arrClosedQtr = repOppsYtd
+    .filter((o) => {
+      if (!o.IsWon || !o.CloseDate) return false;
+      const cd = new Date(o.CloseDate + 'T00:00:00');
+      return cd >= qtrStart && cd <= qtrEnd;
+    })
     .reduce((s, o) => s + arrOrAmount(o), 0);
 
   const arrYtd = repOppsYtd
@@ -89,6 +107,7 @@ export function computeMetrics(tasks, events, oppsQtr, oppsYtd, repId = null) {
     activePipelineArr: formatCurrency(activePipelineArr),
     technicalFitDeals,
     trialToProposalRate: formatPct(trialToProposalRate),
+    avgDaysInStage: avgDaysInStage !== null ? `${avgDaysInStage}d` : '—',
     arrClosedQtr: formatCurrency(arrClosedQtr),
     arrYtd: formatCurrency(arrYtd),
     winLossRate: formatPct(winLossRate),
@@ -96,18 +115,18 @@ export function computeMetrics(tasks, events, oppsQtr, oppsYtd, repId = null) {
     _emailTasks: repTasks.filter((t) => t.Type === 'Email' || t.Subject?.toLowerCase().includes('outreach')),
     _meetingActivities: repEvents.map((e) => ({ ...e, _src: 'event' })),
     _newPipelineOpps: repOppsQtr.filter((o) => !o.IsClosed),
-    _technicalFitOpps: openOpps.filter((o) => o.StageName === 'Technical Fit Agreement'),
-    _trialAndLaterOpps: repOppsQtr.filter((o) => laterStages.has(o.StageName)),
+    _technicalFitOpps: qtrOpenOpps.filter((o) => o.StageName === 'Technical Fit Agreement'),
+    _trialAndLaterOpps: trialAndLater,
     _closedQtrOpps: repOppsQtr.filter((o) => o.IsWon),
     _closedYtdOpps: repOppsYtd.filter((o) => o.IsWon),
     _uniqueClosedOpps: uniqueClosed,
   };
 }
 
-export function computePerRepMetrics(tasks, events, oppsQtr, oppsYtd) {
+export function computePerRepMetrics(tasks, events, oppsQtr, oppsYtd, openOpps) {
   const repIds = new Map();
 
-  for (const arr of [tasks, events, oppsQtr, oppsYtd]) {
+  for (const arr of [tasks, events, oppsQtr, oppsYtd, openOpps]) {
     for (const r of arr || []) {
       if (r.OwnerId && !repIds.has(r.OwnerId)) {
         repIds.set(r.OwnerId, r.Owner?.Name || r.OwnerId);
@@ -118,6 +137,6 @@ export function computePerRepMetrics(tasks, events, oppsQtr, oppsYtd) {
   return Array.from(repIds.entries()).map(([id, name]) => ({
     id,
     name,
-    ...computeMetrics(tasks, events, oppsQtr, oppsYtd, id),
+    ...computeMetrics(tasks, events, oppsQtr, oppsYtd, openOpps, id),
   }));
 }

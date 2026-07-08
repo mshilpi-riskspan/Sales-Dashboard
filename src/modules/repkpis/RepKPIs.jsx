@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from 'react';
 import { useSalesforceQuery } from '../../hooks/useSalesforceQuery';
-import { fetchTasksThisQuarter, fetchEventsThisQuarter, fetchOppsThisQuarter, fetchOppsYTD } from '../../datasources/salesforce';
+import { fetchTasksThisQuarter, fetchEventsThisQuarter, fetchOppsThisQuarter, fetchOppsYTD, fetchOpenOpportunities } from '../../datasources/salesforce';
 import { useRepFilter } from '../../hooks/useRepFilter';
 import { useDashboard } from '../../context/DashboardContext';
 import { computeMetrics, computePerRepMetrics } from './metrics';
@@ -19,32 +19,33 @@ function useAllQueries() {
   const events = useSalesforceQuery(fetchEventsThisQuarter);
   const oppsQtr = useSalesforceQuery(fetchOppsThisQuarter);
   const oppsYtd = useSalesforceQuery(fetchOppsYTD);
-  return { tasks, events, oppsQtr, oppsYtd };
+  const openOpps = useSalesforceQuery(fetchOpenOpportunities);
+  return { tasks, events, oppsQtr, oppsYtd, openOpps };
 }
 
 export default function RepKPIs() {
   const { selectedRep, repList, triggerRefresh } = useDashboard();
-  const { tasks, events, oppsQtr, oppsYtd } = useAllQueries();
+  const { tasks, events, oppsQtr, oppsYtd, openOpps } = useAllQueries();
   const [drillState, setDrillState] = useState(null); // { title, records, type }
   const [activeDeal, setActiveDeal] = useState(null);
 
-  const loading = tasks.loading || events.loading || oppsQtr.loading || oppsYtd.loading;
-  const error = tasks.error || events.error || oppsQtr.error || oppsYtd.error;
+  const loading = tasks.loading || events.loading || oppsQtr.loading || oppsYtd.loading || openOpps.loading;
+  const error = tasks.error || events.error || oppsQtr.error || oppsYtd.error || openOpps.error;
 
   const repId = selectedRep === 'all' ? null : selectedRep;
 
   const metrics = useMemo(() => {
-    if (!tasks.data || !events.data || !oppsQtr.data || !oppsYtd.data) return null;
-    return computeMetrics(tasks.data, events.data, oppsQtr.data, oppsYtd.data, repId);
-  }, [tasks.data, events.data, oppsQtr.data, oppsYtd.data, repId]);
+    if (!tasks.data || !events.data || !oppsQtr.data || !oppsYtd.data || !openOpps.data) return null;
+    return computeMetrics(tasks.data, events.data, oppsQtr.data, oppsYtd.data, openOpps.data, repId);
+  }, [tasks.data, events.data, oppsQtr.data, oppsYtd.data, openOpps.data, repId]);
 
   const repMetrics = useMemo(() => {
     if (selectedRep !== 'all') return null;
-    if (!tasks.data || !events.data || !oppsQtr.data || !oppsYtd.data) return null;
+    if (!tasks.data || !events.data || !oppsQtr.data || !oppsYtd.data || !openOpps.data) return null;
     const activeRepIds = new Set(repList.map((r) => r.id));
-    return computePerRepMetrics(tasks.data, events.data, oppsQtr.data, oppsYtd.data)
+    return computePerRepMetrics(tasks.data, events.data, oppsQtr.data, oppsYtd.data, openOpps.data)
       .filter((r) => activeRepIds.has(r.id));
-  }, [selectedRep, tasks.data, events.data, oppsQtr.data, oppsYtd.data, repList]);
+  }, [selectedRep, tasks.data, events.data, oppsQtr.data, oppsYtd.data, openOpps.data, repList]);
 
   const handleDrill = useCallback((title, records, type) => {
     if (records?.length) setDrillState({ title, records, type });

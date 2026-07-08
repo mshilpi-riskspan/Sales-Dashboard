@@ -130,13 +130,13 @@ async function queryAll(soql) {
 
 // ─── Named query functions ──────────────────────────────────────────────────
 
-export async function fetchOpenOpportunities(year = new Date().getFullYear()) {
+export async function fetchOpenOpportunities() {
   return queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CreatedDate, LastStageChangeDate, CloseDate, NextStep,
      ForecastCategoryName, IsClosed, IsWon, Type
      FROM Opportunity
-     WHERE (IsClosed = false OR (IsWon = true AND CloseDate >= ${year}-01-01 AND CloseDate <= ${year}-12-31))
+     WHERE IsClosed = false
      AND StageName != 'Client Prospecting'
      ORDER BY CreatedDate DESC`
   );

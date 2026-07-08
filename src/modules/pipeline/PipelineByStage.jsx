@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
 import { useSalesforceQuery } from '../../hooks/useSalesforceQuery';
 import { useRepFilter } from '../../hooks/useRepFilter';
-import { fetchOpenOpportunities } from '../../datasources/salesforce';
+import { fetchOpenOpportunities, fetchClosedOppsInYear } from '../../datasources/salesforce';
 import { SALES_STAGES } from '../../config/salesStages';
 import FunnelSummary from './FunnelSummary';
 import StageCard from './StageCard';
@@ -16,9 +16,16 @@ export default function PipelineByStage() {
   const { triggerRefresh } = useDashboard();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
-  const queryFn = useMemo(() => () => fetchOpenOpportunities(selectedYear), [selectedYear]);
-  const { data, loading, error } = useSalesforceQuery(queryFn);
-  const filtered = useRepFilter(data);
+
+  const { data: openData, loading: openLoading, error: openError } = useSalesforceQuery(fetchOpenOpportunities);
+  const closedQueryFn = useMemo(() => () => fetchClosedOppsInYear(selectedYear), [selectedYear]);
+  const { data: closedData, loading: closedLoading, error: closedError } = useSalesforceQuery(closedQueryFn);
+
+  const loading = openLoading || closedLoading;
+  const error = openError || closedError;
+
+  const filteredOpen = useRepFilter(openData);
+  const filteredClosed = useRepFilter(closedData);
   const [showAllDeals, setShowAllDeals] = useState(false);
   const [activeDeal, setActiveDeal] = useState(null);
 
@@ -28,17 +35,25 @@ export default function PipelineByStage() {
       map[stage.name] = { deals: [], totalArr: 0 };
     }
     const other = [];
-    if (!filtered) return { stageData: map, otherDeals: other };
-    for (const opp of filtered) {
-      if (map[opp.StageName] !== undefined) {
+
+    // Open deals → all stages except Closed Won
+    for (const opp of (filteredOpen || [])) {
+      if (map[opp.StageName] !== undefined && opp.StageName !== 'Closed Won') {
         map[opp.StageName].deals.push(opp);
         map[opp.StageName].totalArr += opp.Annual_Recurring_Revenue_ARR__c ?? opp.Amount ?? 0;
-      } else {
+      } else if (map[opp.StageName] === undefined) {
         other.push(opp);
       }
     }
+
+    // Closed Won → exclusively from fetchClosedOppsInYear (same source as Closed Won tab)
+    for (const opp of (filteredClosed || []).filter(o => o.IsWon)) {
+      map['Closed Won'].deals.push(opp);
+      map['Closed Won'].totalArr += opp.Annual_Recurring_Revenue_ARR__c ?? opp.Amount ?? 0;
+    }
+
     return { stageData: map, otherDeals: other };
-  }, [filtered]);
+  }, [filteredOpen, filteredClosed]);
 
   if (loading) {
     return (
@@ -93,7 +108,7 @@ export default function PipelineByStage() {
       </div>
 
       <PipelineListPanel
-        deals={showAllDeals ? filtered : null}
+        deals={showAllDeals ? filteredOpen : null}
         onClose={() => setShowAllDeals(false)}
         onDealClick={(deal) => { setShowAllDeals(false); setActiveDeal(deal); }}
       />

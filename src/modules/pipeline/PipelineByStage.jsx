@@ -46,8 +46,9 @@ export default function PipelineByStage() {
       }
     }
 
-    // Closed Won → exclusively from fetchClosedOppsInYear (same source as Closed Won tab)
-    for (const opp of (filteredClosed || []).filter(o => o.IsWon)) {
+    const PLATFORM_TYPES = ['New Account', 'Upsell', 'Cross-Sell'];
+    // Closed Won → platform types only, matching the Closed Won tab exactly
+    for (const opp of (filteredClosed || []).filter(o => o.IsWon && PLATFORM_TYPES.includes(o.Type))) {
       map['Closed Won'].deals.push(opp);
       map['Closed Won'].totalArr += opp.Annual_Recurring_Revenue_ARR__c ?? opp.Amount ?? 0;
     }

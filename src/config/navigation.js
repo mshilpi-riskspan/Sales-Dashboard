@@ -2,6 +2,7 @@ import PipelineByStage from '../modules/pipeline/PipelineByStage';
 import PipelineByMonth from '../modules/pipeline/PipelineByMonth';
 import DealsAtRisk from '../modules/pipeline/DealsAtRisk';
 import WinLossAnalysis from '../modules/winloss/WinLossAnalysis';
+import ClosedWonByType from '../modules/winloss/ClosedWonByType';
 import CalendarPage from '../modules/calendar/CalendarPage';
 import RepKPIs from '../modules/repkpis/RepKPIs';
 import CampaignsPage from '../modules/campaigns/CampaignsPage';
@@ -33,6 +34,13 @@ export const NAV_ITEMS = [
     label: 'Win / Loss',
     icon: 'TrophyIcon',
     component: WinLossAnalysis,
+    filters: ['salesperson'],
+  },
+  {
+    id: 'closed-won',
+    label: 'Closed Won',
+    icon: 'CurrencyDollarIcon',
+    component: ClosedWonByType,
     filters: ['salesperson'],
   },
   {

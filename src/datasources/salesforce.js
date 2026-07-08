@@ -343,7 +343,8 @@ export async function fetchClosedOppsInYear(year) {
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CreatedDate, CloseDate, IsClosed, IsWon,
      LeadSource, Description, ForecastCategoryName,
-     Loss_Reason__c, Closed_Lost_Reason_Explanation__c, Won_Reason__c
+     Loss_Reason__c, Closed_Lost_Reason_Explanation__c, Won_Reason__c,
+     Type, Primary_Module__c, One_Time_Fees__c
      FROM Opportunity
      WHERE IsClosed = true
      AND CloseDate >= ${year}-01-01 AND CloseDate <= ${year}-12-31

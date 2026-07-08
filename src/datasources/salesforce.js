@@ -138,6 +138,7 @@ export async function fetchOpenOpportunities() {
      FROM Opportunity
      WHERE IsClosed = false
      AND StageName != 'Client Prospecting'
+     AND StageName != 'Renewal Pending'
      AND Type != 'Renewal'
      ORDER BY CreatedDate DESC`
   );
@@ -366,6 +367,8 @@ export async function fetchOpportunitiesClosingInYear(year) {
      WHERE CloseDate >= ${year}-01-01 AND CloseDate <= ${year}-12-31
      AND IsClosed = false
      AND StageName != 'Client Prospecting'
+     AND StageName != 'Renewal Pending'
+     AND Type != 'Renewal'
      ORDER BY CloseDate ASC`
   );
 }

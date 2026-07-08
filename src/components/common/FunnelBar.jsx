@@ -25,12 +25,15 @@ const CustomTooltip = ({ active, payload, label }) => {
 
 function BarLabel({ x, y, width, value }) {
   if (!value) return null;
-  const { count, avgArr } = value;
+  const { count, avgArr, totalArr } = value;
   const cx = x + width / 2;
   return (
     <g>
-      <text x={cx} y={y - 14} textAnchor="middle" fontSize={10} fontWeight={600} fill="#303036">
+      <text x={cx} y={y - 25} textAnchor="middle" fontSize={10} fontWeight={600} fill="#303036">
         {count}
+      </text>
+      <text x={cx} y={y - 14} textAnchor="middle" fontSize={9} fill="#0C8EA3" fontWeight={500}>
+        {formatCurrency(totalArr)}
       </text>
       <text x={cx} y={y - 3} textAnchor="middle" fontSize={9} fill="#858C9C">
         {formatCurrency(avgArr)} avg
@@ -54,8 +57,8 @@ export default function FunnelBar({ stageData }) {
   });
 
   return (
-    <ResponsiveContainer width="100%" height={140}>
-      <BarChart data={data} layout="horizontal" margin={{ top: 30, right: 0, bottom: 0, left: 0 }}>
+    <ResponsiveContainer width="100%" height={155}>
+      <BarChart data={data} layout="horizontal" margin={{ top: 46, right: 0, bottom: 0, left: 0 }}>
         <XAxis
           dataKey="name"
           tick={{ fontSize: 10, fill: '#858C9C' }}

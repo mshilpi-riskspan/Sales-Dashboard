@@ -134,7 +134,7 @@ export async function fetchOpenOpportunities() {
   return queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CreatedDate, LastStageChangeDate, CloseDate, NextStep,
-     ForecastCategoryName, IsClosed, IsWon
+     ForecastCategoryName, IsClosed, IsWon, Type
      FROM Opportunity
      WHERE (IsClosed = false OR (IsWon = true AND CloseDate = THIS_YEAR))
      AND StageName != 'Client Prospecting'
@@ -226,7 +226,7 @@ export async function fetchOppsThisQuarter() {
   return queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CreatedDate, CloseDate, IsClosed, IsWon, LeadSource,
-     Description, ForecastCategoryName
+     Description, ForecastCategoryName, Type
      FROM Opportunity
      WHERE CreatedDate = THIS_QUARTER
      ORDER BY CreatedDate DESC`

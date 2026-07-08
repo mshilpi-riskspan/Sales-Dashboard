@@ -508,6 +508,19 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
                   {deal.StageName}
                 </span>
               </Row>
+              {deal.Type && (
+                <Row label="Type">
+                  <span className={`px-2 py-0.5 rounded-full font-medium text-[11px] ${
+                    deal.Type === 'New Account'   ? 'bg-rs-teal/10 text-rs-teal' :
+                    deal.Type === 'Upsell'        ? 'bg-amber-50 text-amber-700' :
+                    deal.Type === 'Cross-Sell'    ? 'bg-green-50 text-green-700' :
+                    deal.Type === 'Renewal'       ? 'bg-blue-50 text-blue-600' :
+                    'bg-rs-surface text-rs-muted'
+                  }`}>
+                    {deal.Type}
+                  </span>
+                </Row>
+              )}
               <Row label="ARR">
                 <span className="font-semibold">{formatARR(arr)}</span>
               </Row>

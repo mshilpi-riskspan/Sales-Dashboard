@@ -185,7 +185,7 @@ function Skeleton({ rows = 4 }) {
 
 // ── Stage card — one per actual SF CampaignMemberStatus ──────────────────────
 // Members are grouped by company so a company with 3 contacts shows once on the left.
-function StageCard({ statusLabel, members, onMemberClick }) {
+function StageCard({ statusLabel, members, onCompanyClick }) {
   const [expanded, setExpanded] = useState(true);
   const style = getStatusStyle(statusLabel);
 
@@ -242,10 +242,9 @@ function StageCard({ statusLabel, members, onMemberClick }) {
                 contacts.map((m, idx) => (
                   <tr
                     key={m.Id}
-                    onClick={() => onMemberClick(m)}
+                    onClick={() => onCompanyClick(contacts)}
                     className="border-b border-rs-border hover:bg-rs-surface cursor-pointer transition-colors"
                   >
-                    {/* Company cell: rendered once on first row with rowSpan; omitted entirely on subsequent rows */}
                     {idx === 0 && (
                       <td className="px-3 py-2 align-top border-r border-rs-border/40" rowSpan={contacts.length}>
                         <span className="text-sm font-medium text-rs-text">{company}</span>
@@ -505,29 +504,21 @@ function computeCadenceLocal(activities) {
   };
 }
 
-// ── Member detail slide panel (rich — mirrors DealDetailPanel) ───────────────
-function MemberPanel({ member, campaignMembers, campaignOpps, onClose, onDealClick }) {
+// ── Company detail slide panel — shows all contacts + unified activity feed ───
+function MemberPanel({ companyMembers, campaignOpps, onClose, onDealClick }) {
   const [account, setAccount] = useState(null);
   const [activities, setActivities] = useState(null);
   const [loadingAccount, setLoadingAccount] = useState(false);
   const [loadingActivities, setLoadingActivities] = useState(false);
-  const [showAllContacts, setShowAllContacts] = useState(false);
 
-  const accountId = member?.Contact?.AccountId || member?.AccountId || null;
-
-  // Other campaign members from the same company (excluding the selected member)
-  const coMembers = useMemo(() => {
-    if (!member) return [];
-    return campaignMembers.filter(
-      m => m.Id !== member.Id && m.CompanyOrAccount === member.CompanyOrAccount
-    );
-  }, [member, campaignMembers]);
+  const primaryMember = companyMembers?.[0];
+  const accountId = primaryMember?.Contact?.AccountId || primaryMember?.AccountId || null;
+  const companyName = primaryMember?.CompanyOrAccount || '—';
 
   useEffect(() => {
-    if (!member) return;
+    if (!primaryMember) return;
     setAccount(null);
     setActivities(null);
-    setShowAllContacts(false);
 
     if (accountId) {
       setLoadingAccount(true);
@@ -546,12 +537,11 @@ function MemberPanel({ member, campaignMembers, campaignOpps, onClose, onDealCli
         .catch(() => setActivities([]))
         .finally(() => setLoadingActivities(false));
     }
-  }, [member?.Id]);
+  }, [primaryMember?.Id]);
 
-  if (!member) return null;
+  if (!primaryMember) return null;
 
-  const statusStyle = getStatusStyle(member.Status);
-  const companyKey = (member.CompanyOrAccount || '').toLowerCase().split(/[\s,]/)[0];
+  const companyKey = companyName.toLowerCase().split(/[\s,]/)[0];
   const linkedOpp = companyKey
     ? campaignOpps.find(o => o.Account?.Name?.toLowerCase().includes(companyKey))
     : null;
@@ -559,33 +549,47 @@ function MemberPanel({ member, campaignMembers, campaignOpps, onClose, onDealCli
   const cadence = activities ? computeCadenceLocal(activities) : null;
   const groupedActivities = activities ? groupActivitiesLocal(activities) : null;
   const cadenceMax = cadence?.ytd || 1;
-  const visibleCoMembers = showAllContacts ? coMembers : coMembers.slice(0, 5);
 
   return (
     <SlidePanel
       open
       onClose={onClose}
-      title={member.Name}
-      subtitle={member.CompanyOrAccount || 'Contact Detail'}
-      width={540}
+      title={companyName}
+      subtitle={`${companyMembers.length} contact${companyMembers.length !== 1 ? 's' : ''} in this campaign`}
+      width={560}
     >
       <div className="p-5 space-y-6">
 
-        {/* Campaign status section */}
+        {/* All contacts at this company */}
         <section>
-          <SectionLabel>Campaign</SectionLabel>
+          <SectionLabel>Contacts ({companyMembers.length})</SectionLabel>
           <div className="divide-y divide-rs-border/50">
-            <Row label="Status">
-              <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${statusStyle.badgeCls}`}>
-                {member.Status}
-              </span>
-            </Row>
-            <Row label="Responded">{member.HasResponded ? '✓ Yes' : 'No'}</Row>
-            {member.FirstRespondedDate && (
-              <Row label="Responded On">{format(new Date(member.FirstRespondedDate), 'MMM d, yyyy')}</Row>
-            )}
-            {member.Email && <Row label="Email"><span className="text-rs-teal truncate max-w-[200px] block">{member.Email}</span></Row>}
-            {member.Title && <Row label="Title">{member.Title}</Row>}
+            {companyMembers.map(m => {
+              const s = getStatusStyle(m.Status);
+              return (
+                <div key={m.Id} className="py-2.5 flex items-start gap-3">
+                  <div className="shrink-0 w-7 h-7 rounded-full bg-rs-teal/15 text-rs-teal flex items-center justify-center text-[11px] font-semibold mt-0.5">
+                    {(m.FirstName?.[0] || m.Name?.[0] || '?')}{(m.LastName?.[0] || '')}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium text-rs-text leading-tight">{m.Name}</p>
+                    {m.Title && <p className="text-[10px] text-rs-muted mt-0.5">{m.Title}</p>}
+                    {m.Email && <p className="text-[10px] text-rs-teal mt-0.5 truncate">{m.Email}</p>}
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${s.badgeCls}`}>
+                      {m.Status}
+                    </span>
+                    {m.HasResponded && (
+                      <p className="text-[10px] text-green-600 mt-1">✓ Responded</p>
+                    )}
+                    {m.FirstRespondedDate && (
+                      <p className="text-[10px] text-rs-muted mt-0.5">{relativeDate(m.FirstRespondedDate)}</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </section>
 
@@ -606,7 +610,7 @@ function MemberPanel({ member, campaignMembers, campaignOpps, onClose, onDealCli
           </section>
         )}
 
-        {/* Company */}
+        {/* Company info */}
         <section>
           <SectionLabel>Company</SectionLabel>
           {!accountId ? (
@@ -637,41 +641,6 @@ function MemberPanel({ member, campaignMembers, campaignOpps, onClose, onDealCli
           )}
         </section>
 
-        {/* Other campaign members from the same company */}
-        {coMembers.length > 0 && (
-          <section>
-            <SectionLabel>Also in Campaign ({coMembers.length})</SectionLabel>
-            <div>
-              {visibleCoMembers.map(m => {
-                const s = getStatusStyle(m.Status);
-                const lastActive = relativeDate(m.FirstRespondedDate || m.CreatedDate);
-                return (
-                  <div key={m.Id} className="flex items-start gap-3 py-2 border-b border-rs-border/50 last:border-0">
-                    <div className="shrink-0 w-7 h-7 rounded-full bg-rs-teal/15 text-rs-teal flex items-center justify-center text-[11px] font-semibold">
-                      {(m.FirstName?.[0] || m.Name?.[0] || '?')}{(m.LastName?.[0] || '')}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-medium text-rs-text leading-tight">{m.Name}</p>
-                        {lastActive && <span className="text-[10px] text-rs-muted shrink-0">{lastActive}</span>}
-                      </div>
-                      {m.Title && <p className="text-[10px] text-rs-muted mt-0.5">{m.Title}</p>}
-                    </div>
-                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${s.badgeCls}`}>
-                      {m.Status}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-            {coMembers.length > 5 && (
-              <button onClick={() => setShowAllContacts(s => !s)} className="mt-2 text-[11px] text-rs-teal hover:underline">
-                {showAllContacts ? 'Show fewer' : `Show all ${coMembers.length}`}
-              </button>
-            )}
-          </section>
-        )}
-
         {/* Activity cadence */}
         {cadence && (
           <section>
@@ -685,9 +654,9 @@ function MemberPanel({ member, campaignMembers, campaignOpps, onClose, onDealCli
           </section>
         )}
 
-        {/* Activity feed */}
+        {/* Activity feed — account-level, shows all communications with this company */}
         <section>
-          <SectionLabel>Activity Feed</SectionLabel>
+          <SectionLabel>All Communications</SectionLabel>
           {!accountId ? (
             <p className="text-xs text-rs-muted">No linked account</p>
           ) : loadingActivities ? (
@@ -722,7 +691,7 @@ export default function CampaignsPage() {
   const [opps, setOpps] = useState([]);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  const [activeMember, setActiveMember] = useState(null);
+  const [activeCompanyMembers, setActiveCompanyMembers] = useState(null);
   const [activeDeal, setActiveDeal] = useState(null);
 
   const [showActiveOnly, setShowActiveOnly] = useState(false);
@@ -748,7 +717,7 @@ export default function CampaignsPage() {
     setStatuses([]);
     setMembers([]);
     setOpps([]);
-    setActiveMember(null);
+    setActiveCompanyMembers(null);
     setActiveDeal(null);
     Promise.all([
       fetchCampaignStatuses(selectedId),
@@ -912,7 +881,7 @@ export default function CampaignsPage() {
               key={s.Id}
               statusLabel={s.Label}
               members={membersByStatus[s.Label] || []}
-              onMemberClick={setActiveMember}
+              onCompanyClick={setActiveCompanyMembers}
             />
           ))}
         </div>
@@ -981,12 +950,11 @@ export default function CampaignsPage() {
       )}
 
       {/* ── Panels ───────────────────────────────────────────────────────────── */}
-      {activeMember && !activeDeal && (
+      {activeCompanyMembers && !activeDeal && (
         <MemberPanel
-          member={activeMember}
-          campaignMembers={members}
+          companyMembers={activeCompanyMembers}
           campaignOpps={opps}
-          onClose={() => setActiveMember(null)}
+          onClose={() => setActiveCompanyMembers(null)}
           onDealClick={deal => { setActiveDeal(deal); }}
         />
       )}

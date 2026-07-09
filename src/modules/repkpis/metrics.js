@@ -117,7 +117,11 @@ export function computeMetrics(tasks, events, oppsQtr, oppsYtd, openOpps, repId 
     _newPipelineOpps: repOppsQtr.filter((o) => !o.IsClosed),
     _technicalFitOpps: qtrOpenOpps.filter((o) => o.StageName === 'Technical Fit Agreement'),
     _trialAndLaterOpps: trialAndLater,
-    _closedQtrOpps: repOppsQtr.filter((o) => o.IsWon),
+    _closedQtrOpps: repOppsYtd.filter((o) => {
+      if (!o.IsWon || !o.CloseDate) return false;
+      const cd = new Date(o.CloseDate + 'T00:00:00');
+      return cd >= qtrStart && cd <= qtrEnd;
+    }),
     _closedYtdOpps: repOppsYtd.filter((o) => o.IsWon),
     _uniqueClosedOpps: uniqueClosed,
   };

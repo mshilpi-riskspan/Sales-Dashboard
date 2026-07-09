@@ -241,13 +241,13 @@ export async function fetchRecentlyLost() {
   if (isCacheValid(cached)) return cached.data;
   const data = await queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
-     AccountId, Account.Name, CloseDate, LastModifiedDate, IsClosed, IsWon,
+     AccountId, Account.Name, CloseDate, LastStageChangeDate, IsClosed, IsWon,
      Loss_Reason__c, Closed_Lost_Reason_Explanation__c, Won_Reason__c, Description, ForecastCategoryName, Type
      FROM Opportunity
      WHERE IsClosed = true
      AND IsWon = false
-     AND LastModifiedDate = LAST_N_DAYS:30
-     ORDER BY LastModifiedDate DESC`
+     AND LastStageChangeDate = LAST_N_DAYS:30
+     ORDER BY LastStageChangeDate DESC`
   );
   cache.set(cacheKey, { data, timestamp: Date.now() });
   return data;
@@ -256,8 +256,9 @@ export async function fetchRecentlyLost() {
 export async function fetchOppsYTD() {
   const year = new Date().getFullYear();
   return queryAll(
-    `SELECT Id, OwnerId, Owner.Name, Annual_Recurring_Revenue_ARR__c, Amount, IsWon, IsClosed,
-     CloseDate, Description, ForecastCategoryName
+    `SELECT Id, Name, StageName, OwnerId, Owner.Name, AccountId, Account.Name,
+     Annual_Recurring_Revenue_ARR__c, Amount, IsWon, IsClosed,
+     CloseDate, CreatedDate, Description, ForecastCategoryName, Type
      FROM Opportunity
      WHERE IsWon = true
      AND CloseDate >= ${year}-01-01`

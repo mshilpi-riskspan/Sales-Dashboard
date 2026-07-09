@@ -189,7 +189,7 @@ function DealRow({ deal, onClick }) {
 }
 
 // ── Recently lost section ─────────────────────────────────────────────────────
-function RecentlyLost({ deals, onDealClick }) {
+function RecentlyLost({ deals = [], onDealClick }) {
   const [expanded, setExpanded] = useState(true);
   const totalArr = deals.reduce((s, d) => s + (d.Annual_Recurring_Revenue_ARR__c ?? d.Amount ?? 0), 0);
 
@@ -242,7 +242,7 @@ function RecentlyLost({ deals, onDealClick }) {
                     <td className="px-3 py-2 text-rs-muted">{deal.Owner?.Name || '—'}</td>
                     <td className="px-3 py-2 font-semibold text-rs-text">{formatARR(arr)}</td>
                     <td className="px-3 py-2 text-rs-muted whitespace-nowrap">
-                      {deal.LastModifiedDate ? format(new Date(deal.LastModifiedDate), 'MMM d') : '—'}
+                      {deal.LastStageChangeDate ? format(new Date(deal.LastStageChangeDate.slice(0, 10) + 'T00:00:00'), 'MMM d') : '—'}
                     </td>
                     <td className="px-3 py-2 text-xs text-rs-muted">{deal.Loss_Reason__c || '—'}</td>
                     <td className="px-3 py-2 text-xs text-rs-muted max-w-xs">
@@ -320,7 +320,7 @@ export default function WinLossAnalysis() {
 
   const filteredRecentLost = useRepFilter(recentLostRaw);
   const recentLost = useMemo(() => (
-    [...filteredRecentLost].sort((a, b) => new Date(b.LastModifiedDate) - new Date(a.LastModifiedDate))
+    [...(filteredRecentLost || [])].sort((a, b) => new Date(b.LastStageChangeDate) - new Date(a.LastStageChangeDate))
   ), [filteredRecentLost]);
 
   const totalArr = won.reduce((s, d) => s + (d.Annual_Recurring_Revenue_ARR__c ?? d.Amount ?? 0), 0);

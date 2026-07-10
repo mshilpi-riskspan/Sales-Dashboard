@@ -5,6 +5,7 @@ const DashboardContext = createContext(null);
 
 export function DashboardProvider({ children }) {
   const [selectedRep, setSelectedRep] = useState('all');
+  const [selectedLob, setSelectedLob] = useState('all');
   const [repList, setRepList] = useState([]);
   const [lastRefreshed, setLastRefreshed] = useState(new Date());
   const [refreshCount, setRefreshCount] = useState(0);
@@ -23,7 +24,7 @@ export function DashboardProvider({ children }) {
 
   return (
     <DashboardContext.Provider
-      value={{ selectedRep, setSelectedRep, repList, lastRefreshed, refreshCount, triggerRefresh }}
+      value={{ selectedRep, setSelectedRep, selectedLob, setSelectedLob, repList, lastRefreshed, refreshCount, triggerRefresh }}
     >
       {children}
     </DashboardContext.Provider>

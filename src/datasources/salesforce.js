@@ -134,7 +134,7 @@ export async function fetchOpenOpportunities() {
   return queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CreatedDate, LastStageChangeDate, CloseDate, NextStep,
-     ForecastCategoryName, IsClosed, IsWon, Type
+     ForecastCategoryName, IsClosed, IsWon, Type, Line_of_Business__c
      FROM Opportunity
      WHERE IsClosed = false
      AND StageName != 'Client Prospecting'
@@ -228,7 +228,7 @@ export async function fetchOppsThisQuarter() {
   return queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CreatedDate, CloseDate, IsClosed, IsWon, LeadSource,
-     Description, ForecastCategoryName, Type
+     Description, ForecastCategoryName, Type, Line_of_Business__c
      FROM Opportunity
      WHERE CreatedDate = THIS_QUARTER
      ORDER BY CreatedDate DESC`
@@ -242,12 +242,13 @@ export async function fetchRecentlyLost() {
   const data = await queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CloseDate, LastStageChangeDate, IsClosed, IsWon,
-     Loss_Reason__c, Closed_Lost_Reason_Explanation__c, Won_Reason__c, Description, ForecastCategoryName, Type
+     Loss_Reason__c, Closed_Lost_Reason_Explanation__c, Won_Reason__c, Description, ForecastCategoryName, Type, Line_of_Business__c
      FROM Opportunity
      WHERE IsClosed = true
      AND IsWon = false
-     AND LastStageChangeDate = LAST_N_DAYS:30
-     ORDER BY LastStageChangeDate DESC`
+     AND CloseDate = LAST_N_DAYS:30
+     AND Type != 'Renewal'
+     ORDER BY CloseDate DESC`
   );
   cache.set(cacheKey, { data, timestamp: Date.now() });
   return data;
@@ -258,7 +259,7 @@ export async function fetchOppsYTD() {
   return queryAll(
     `SELECT Id, Name, StageName, OwnerId, Owner.Name, AccountId, Account.Name,
      Annual_Recurring_Revenue_ARR__c, Amount, IsWon, IsClosed,
-     CloseDate, CreatedDate, Description, ForecastCategoryName, Type
+     CloseDate, CreatedDate, Description, ForecastCategoryName, Type, Line_of_Business__c
      FROM Opportunity
      WHERE IsWon = true
      AND CloseDate >= ${year}-01-01`
@@ -365,7 +366,7 @@ export async function fetchClosedOppsInYear(year) {
      AccountId, Account.Name, CreatedDate, CloseDate, IsClosed, IsWon,
      LeadSource, Description, ForecastCategoryName,
      Loss_Reason__c, Closed_Lost_Reason_Explanation__c, Won_Reason__c,
-     Type, Primary_Module__c, One_Time_Fees__c
+     Type, Primary_Module__c, One_Time_Fees__c, Line_of_Business__c
      FROM Opportunity
      WHERE IsClosed = true
      AND CloseDate >= ${year}-01-01 AND CloseDate <= ${year}-12-31
@@ -381,7 +382,7 @@ export async function fetchOpportunitiesClosingInYear(year) {
   return queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CreatedDate, LastStageChangeDate, CloseDate, NextStep,
-     ForecastCategoryName, IsClosed, IsWon
+     ForecastCategoryName, IsClosed, IsWon, Line_of_Business__c
      FROM Opportunity
      WHERE CloseDate >= ${year}-01-01 AND CloseDate <= ${year}-12-31
      AND IsClosed = false

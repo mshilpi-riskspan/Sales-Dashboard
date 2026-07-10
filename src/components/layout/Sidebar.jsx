@@ -1,8 +1,17 @@
 import { ChartBarIcon, UserGroupIcon, MegaphoneIcon, CalendarIcon, CalendarDaysIcon, TrophyIcon, ExclamationTriangleIcon, CurrencyDollarIcon } from '@heroicons/react/24/outline';
+import { useDashboard } from '../../context/DashboardContext';
 
 const ICON_MAP = { ChartBarIcon, UserGroupIcon, MegaphoneIcon, CalendarIcon, CalendarDaysIcon, TrophyIcon, ExclamationTriangleIcon, CurrencyDollarIcon };
 
+const LOB_OPTIONS = [
+  { value: 'all',           label: 'All' },
+  { value: 'Edge Platform', label: 'Edge Platform' },
+  { value: 'Consulting',    label: 'Consulting' },
+  { value: 'Valuation',     label: 'Valuation' },
+];
+
 export default function Sidebar({ navItems, activePage, onNavigate }) {
+  const { selectedLob, setSelectedLob } = useDashboard();
   return (
     <aside className="flex flex-col w-52 shrink-0 bg-rs-navy h-screen">
       {/* Wordmark */}
@@ -34,6 +43,24 @@ export default function Sidebar({ navItems, activePage, onNavigate }) {
           );
         })}
       </nav>
+
+      {/* Line of Business filter */}
+      <div className="px-3 py-3 border-t border-white/10">
+        <p className="text-white/40 text-[10px] uppercase tracking-widest font-medium px-2 mb-2">Line of Business</p>
+        {LOB_OPTIONS.map((opt) => (
+          <button
+            key={opt.value}
+            onClick={() => setSelectedLob(opt.value)}
+            className={`w-full text-left px-3 py-1.5 rounded-md text-xs font-medium transition-colors mb-0.5
+              ${selectedLob === opt.value
+                ? 'bg-rs-teal/20 text-rs-teal'
+                : 'text-white/50 hover:text-white hover:bg-white/5'
+              }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
 
       <div className="px-5 py-4 border-t border-white/10">
         <p className="text-white/30 text-[10px]">v1.0 · Sales Module</p>

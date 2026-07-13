@@ -134,7 +134,7 @@ export async function fetchOpenOpportunities() {
   return queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CreatedDate, LastStageChangeDate, CloseDate, NextStep,
-     ForecastCategoryName, IsClosed, IsWon, Type, Line_of_Business__c
+     ForecastCategoryName, IsClosed, IsWon, Type, Line_of_Business__c, Primary_Module__c
      FROM Opportunity
      WHERE IsClosed = false
      AND StageName != 'Client Prospecting'
@@ -228,7 +228,7 @@ export async function fetchOppsThisQuarter() {
   return queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CreatedDate, CloseDate, IsClosed, IsWon, LeadSource,
-     Description, ForecastCategoryName, Type, Line_of_Business__c
+     Description, ForecastCategoryName, Type, Line_of_Business__c, Primary_Module__c
      FROM Opportunity
      WHERE CreatedDate = THIS_QUARTER
      ORDER BY CreatedDate DESC`
@@ -242,7 +242,7 @@ export async function fetchRecentlyLost() {
   const data = await queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CloseDate, LastStageChangeDate, IsClosed, IsWon,
-     Loss_Reason__c, Closed_Lost_Reason_Explanation__c, Won_Reason__c, Description, ForecastCategoryName, Type, Line_of_Business__c
+     Loss_Reason__c, Closed_Lost_Reason_Explanation__c, Won_Reason__c, Description, ForecastCategoryName, Type, Line_of_Business__c, Primary_Module__c
      FROM Opportunity
      WHERE IsClosed = true
      AND IsWon = false

@@ -518,6 +518,21 @@ export default function DealDetailPanel({ deal, onClose, tasks, events }) {
                   </span>
                 </Row>
               )}
+              {deal.Line_of_Business__c && (
+                <Row label="Line of Business">
+                  <span className={`px-2 py-0.5 rounded-full font-medium text-[11px] ${
+                    deal.Line_of_Business__c === 'Edge Platform' ? 'bg-rs-teal/10 text-rs-teal' :
+                    deal.Line_of_Business__c === 'Consulting'    ? 'bg-amber-50 text-amber-700' :
+                    deal.Line_of_Business__c === 'Valuation'     ? 'bg-purple-50 text-purple-600' :
+                    'bg-rs-surface text-rs-muted'
+                  }`}>
+                    {deal.Line_of_Business__c}
+                  </span>
+                </Row>
+              )}
+              {deal.Primary_Module__c && (
+                <Row label="Module">{deal.Primary_Module__c}</Row>
+              )}
               <Row label="ARR">
                 <span className="font-semibold">{formatARR(arr)}</span>
               </Row>

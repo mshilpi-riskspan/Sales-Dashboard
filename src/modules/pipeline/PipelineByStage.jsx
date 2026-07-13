@@ -33,10 +33,12 @@ function PipelineByMonthMini({ deals, scope, currentYear }) {
         const cd = new Date(d.CloseDate + 'T00:00:00');
         monthSet.add(`${getYear(cd)}-${String(getMonth(cd)).padStart(2, '0')}`);
       });
-      const sorted = [...monthSet].sort().map((key) => {
-        const [y, m] = key.split('-').map(Number);
-        return new Date(y, m, 1);
-      });
+      const sorted = [...monthSet].sort()
+        .map((key) => {
+          const [y, m] = key.split('-').map(Number);
+          return new Date(y, m, 1);
+        })
+        .filter((d) => getYear(d) > todayYear || (getYear(d) === todayYear && getMonth(d) >= todayMonth));
       return { months: sorted, labelFmt: 'MMM yy', subtitle: 'All open deals by close month' };
     }
     const targetYear = scope === 'current' ? currentYear : currentYear + 1;

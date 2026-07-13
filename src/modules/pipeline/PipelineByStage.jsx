@@ -160,8 +160,7 @@ export default function PipelineByStage() {
 
   return (
     <div>
-      <FunnelSummary stageData={stageData} onShowAll={() => setShowAllDeals(true)} />
-      <div className="flex items-center justify-between mb-3 px-1">
+      <div className="flex items-center justify-between mb-4 px-1">
         <span className="text-xs font-medium text-rs-text">Close Date</span>
         <div className="flex gap-1">
           {scopeOptions.map((opt) => (
@@ -179,6 +178,7 @@ export default function PipelineByStage() {
           ))}
         </div>
       </div>
+      <FunnelSummary stageData={stageData} onShowAll={() => setShowAllDeals(true)} />
       <PipelineByMonthMini deals={scopedOpen} scope={selectedScope} currentYear={currentYear} />
       <div className="space-y-4">
         {SALES_STAGES.map((stage) => (

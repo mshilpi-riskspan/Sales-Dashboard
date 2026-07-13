@@ -43,7 +43,7 @@ function BarLabel({ x, y, width, value }) {
 }
 
 export default function FunnelBar({ stageData }) {
-  const data = SALES_STAGES.map((s, i) => {
+  const data = SALES_STAGES.filter((s) => s.name !== 'Closed Won').map((s, i) => {
     const sd = stageData[s.name] || { deals: [], totalArr: 0 };
     const count = sd.deals.length;
     return {

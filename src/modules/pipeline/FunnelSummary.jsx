@@ -9,7 +9,9 @@ function formatARR(v) {
 }
 
 export default function FunnelSummary({ stageData, onShowAll }) {
-  const totalDeals = SALES_STAGES.reduce((sum, s) => sum + (stageData[s.name]?.deals.length || 0), 0);
+  const totalDeals = SALES_STAGES
+    .filter((s) => s.name !== 'Closed Won')
+    .reduce((sum, s) => sum + (stageData[s.name]?.deals.length || 0), 0);
   const totalArr = SALES_STAGES
     .filter((s) => s.name !== 'Closed Won')
     .reduce((sum, s) => sum + (stageData[s.name]?.totalArr || 0), 0);

@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react';
-import { ChevronLeftIcon, ChevronRightIcon } from '@heroicons/react/24/outline';
-import { format, startOfMonth, endOfYear, addMonths, getMonth, getYear } from 'date-fns';
+import { format, getMonth, getYear } from 'date-fns';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { useSalesforceQuery } from '../../hooks/useSalesforceQuery';
 import { useRepFilter } from '../../hooks/useRepFilter';
-import { fetchOpenOpportunities, fetchClosedOppsInYear } from '../../datasources/salesforce';
+import { fetchOpenOpportunities } from '../../datasources/salesforce';
 import { SALES_STAGES } from '../../config/salesStages';
 import FunnelSummary from './FunnelSummary';
 import StageCard from './StageCard';
@@ -21,17 +20,29 @@ function formatARR(v) {
   return `$${v}`;
 }
 
-function PipelineByMonthMini({ deals }) {
+function PipelineByMonthMini({ deals, scope, currentYear }) {
   const now = new Date();
-  const thisMonth = startOfMonth(now);
-  const yearEnd = endOfYear(now);
+  const todayMonth = getMonth(now);
+  const todayYear = getYear(now);
 
-  const months = [];
-  let cursor = thisMonth;
-  while (cursor <= yearEnd) {
-    months.push(cursor);
-    cursor = addMonths(cursor, 1);
-  }
+  const { months, labelFmt, subtitle } = useMemo(() => {
+    if (scope === 'all') {
+      const monthSet = new Set();
+      (deals || []).forEach((d) => {
+        if (!d.CloseDate) return;
+        const cd = new Date(d.CloseDate + 'T00:00:00');
+        monthSet.add(`${getYear(cd)}-${String(getMonth(cd)).padStart(2, '0')}`);
+      });
+      const sorted = [...monthSet].sort().map((key) => {
+        const [y, m] = key.split('-').map(Number);
+        return new Date(y, m, 1);
+      });
+      return { months: sorted, labelFmt: 'MMM yy', subtitle: 'All open deals by close month' };
+    }
+    const targetYear = scope === 'current' ? currentYear : currentYear + 1;
+    const ms = Array.from({ length: 12 }, (_, i) => new Date(targetYear, i, 1));
+    return { months: ms, labelFmt: 'MMM', subtitle: `Open deals closing in ${targetYear}` };
+  }, [deals, scope, currentYear]);
 
   const data = months.map((monthDate) => {
     const m = getMonth(monthDate);
@@ -42,16 +53,15 @@ function PipelineByMonthMini({ deals }) {
       return getMonth(cd) === m && getYear(cd) === y;
     });
     const arr = monthDeals.reduce((s, d) => s + (d.Annual_Recurring_Revenue_ARR__c ?? d.Amount ?? 0), 0);
-    return { label: format(monthDate, 'MMM'), arr, count: monthDeals.length };
+    return { label: format(monthDate, labelFmt), arr, count: monthDeals.length, month: m, year: y };
   });
 
   const maxArr = Math.max(...data.map((d) => d.arr), 1);
-  const todayMonth = getMonth(now);
 
   return (
     <div className="rounded-card border border-rs-border bg-white p-4 mb-4">
       <h3 className="text-sm font-semibold text-rs-text mb-1">Pipeline Close Schedule</h3>
-      <p className="text-[11px] text-rs-muted mb-3">Open deals by expected close month · {new Date().getFullYear()}</p>
+      <p className="text-[11px] text-rs-muted mb-3">{subtitle}</p>
       <ResponsiveContainer width="100%" height={120}>
         <BarChart data={data} margin={{ top: 16, right: 4, left: 0, bottom: 0 }} barCategoryGap="28%">
           <XAxis
@@ -79,7 +89,7 @@ function PipelineByMonthMini({ deals }) {
             {data.map((entry, i) => (
               <Cell
                 key={i}
-                fill={getMonth(months[i]) === todayMonth ? '#0C8EA3' : '#0C8EA380'}
+                fill={entry.month === todayMonth && entry.year === todayYear ? '#0C8EA3' : '#0C8EA380'}
               />
             ))}
           </Bar>
@@ -92,19 +102,22 @@ function PipelineByMonthMini({ deals }) {
 export default function PipelineByStage() {
   const { triggerRefresh } = useDashboard();
   const currentYear = new Date().getFullYear();
-  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [selectedScope, setSelectedScope] = useState('all');
 
-  const { data: openData, loading: openLoading, error: openError } = useSalesforceQuery(fetchOpenOpportunities);
-  const closedQueryFn = useMemo(() => () => fetchClosedOppsInYear(selectedYear), [selectedYear]);
-  const { data: closedData, loading: closedLoading, error: closedError } = useSalesforceQuery(closedQueryFn);
-
-  const loading = openLoading || closedLoading;
-  const error = openError || closedError;
+  const { data: openData, loading, error } = useSalesforceQuery(fetchOpenOpportunities);
 
   const filteredOpen = useRepFilter(openData);
-  const filteredClosed = useRepFilter(closedData);
   const [showAllDeals, setShowAllDeals] = useState(false);
   const [activeDeal, setActiveDeal] = useState(null);
+
+  const scopedOpen = useMemo(() => {
+    if (selectedScope === 'all') return filteredOpen || [];
+    const targetYear = selectedScope === 'current' ? currentYear : currentYear + 1;
+    return (filteredOpen || []).filter((d) => {
+      if (!d.CloseDate) return false;
+      return new Date(d.CloseDate + 'T00:00:00').getFullYear() === targetYear;
+    });
+  }, [filteredOpen, selectedScope, currentYear]);
 
   const { stageData, otherDeals } = useMemo(() => {
     const map = {};
@@ -113,8 +126,7 @@ export default function PipelineByStage() {
     }
     const other = [];
 
-    // Open deals → all stages except Closed Won
-    for (const opp of (filteredOpen || [])) {
+    for (const opp of scopedOpen) {
       if (map[opp.StageName] !== undefined && opp.StageName !== 'Closed Won') {
         map[opp.StageName].deals.push(opp);
         map[opp.StageName].totalArr += opp.Annual_Recurring_Revenue_ARR__c ?? opp.Amount ?? 0;
@@ -123,15 +135,8 @@ export default function PipelineByStage() {
       }
     }
 
-    const PLATFORM_TYPES = ['New Account', 'Upsell', 'Cross-Sell'];
-    // Closed Won → platform types only, matching the Closed Won tab exactly
-    for (const opp of (filteredClosed || []).filter(o => o.IsWon && PLATFORM_TYPES.includes(o.Type))) {
-      map['Closed Won'].deals.push(opp);
-      map['Closed Won'].totalArr += opp.Annual_Recurring_Revenue_ARR__c ?? opp.Amount ?? 0;
-    }
-
     return { stageData: map, otherDeals: other };
-  }, [filteredOpen, filteredClosed]);
+  }, [scopedOpen]);
 
   if (loading) {
     return (
@@ -145,28 +150,34 @@ export default function PipelineByStage() {
     return <ErrorState message={error} onRetry={triggerRefresh} />;
   }
 
+  const scopeOptions = [
+    { value: 'all',     label: 'All' },
+    { value: 'current', label: String(currentYear) },
+    { value: 'next',    label: String(currentYear + 1) },
+  ];
+
   return (
     <div>
       <FunnelSummary stageData={stageData} onShowAll={() => setShowAllDeals(true)} />
-      <PipelineByMonthMini deals={filteredOpen} />
       <div className="flex items-center justify-between mb-3 px-1">
-        <span className="text-xs text-rs-muted">Closed Won shown for selected year</span>
-        <div className="flex items-center gap-1 border border-rs-border rounded-lg px-2 py-1 bg-white">
-          <button
-            onClick={() => setSelectedYear(y => y - 1)}
-            className="text-rs-muted hover:text-rs-text transition-colors p-0.5"
-          >
-            <ChevronLeftIcon className="h-3.5 w-3.5" />
-          </button>
-          <span className="text-sm font-semibold text-rs-text w-12 text-center">{selectedYear}</span>
-          <button
-            onClick={() => setSelectedYear(y => y + 1)}
-            className="text-rs-muted hover:text-rs-text transition-colors p-0.5"
-          >
-            <ChevronRightIcon className="h-3.5 w-3.5" />
-          </button>
+        <span className="text-xs font-medium text-rs-text">Close Date</span>
+        <div className="flex gap-1">
+          {scopeOptions.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setSelectedScope(opt.value)}
+              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors
+                ${selectedScope === opt.value
+                  ? 'bg-rs-teal/10 text-rs-teal border-rs-teal/30'
+                  : 'text-rs-muted border-rs-border hover:text-rs-text hover:border-rs-text/30'
+                }`}
+            >
+              {opt.label}
+            </button>
+          ))}
         </div>
       </div>
+      <PipelineByMonthMini deals={scopedOpen} scope={selectedScope} currentYear={currentYear} />
       <div className="space-y-4">
         {SALES_STAGES.map((stage) => (
           <StageCard
@@ -187,7 +198,7 @@ export default function PipelineByStage() {
       </div>
 
       <PipelineListPanel
-        deals={showAllDeals ? filteredOpen : null}
+        deals={showAllDeals ? scopedOpen : null}
         onClose={() => setShowAllDeals(false)}
         onDealClick={(deal) => { setShowAllDeals(false); setActiveDeal(deal); }}
       />

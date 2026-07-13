@@ -42,7 +42,8 @@ function PipelineByMonthMini({ deals, scope, currentYear }) {
       return { months: sorted, labelFmt: 'MMM yy', subtitle: 'All open deals by close month' };
     }
     const targetYear = scope === 'current' ? currentYear : currentYear + 1;
-    const ms = Array.from({ length: 12 }, (_, i) => new Date(targetYear, i, 1));
+    const ms = Array.from({ length: 12 }, (_, i) => new Date(targetYear, i, 1))
+      .filter((d) => getYear(d) > todayYear || (getYear(d) === todayYear && getMonth(d) >= todayMonth));
     return { months: ms, labelFmt: 'MMM', subtitle: `Open deals closing in ${targetYear}` };
   }, [deals, scope, currentYear]);
 

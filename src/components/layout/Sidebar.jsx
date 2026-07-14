@@ -7,7 +7,6 @@ const LOB_OPTIONS = [
   { value: 'all',           label: 'All' },
   { value: 'Edge Platform', label: 'Edge Platform' },
   { value: 'Consulting',    label: 'Consulting' },
-  { value: 'Valuation',     label: 'Valuation' },
 ];
 
 export default function Sidebar({ navItems, activePage, onNavigate }) {

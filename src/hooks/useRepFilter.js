@@ -8,7 +8,12 @@ export function useRepFilter(records) {
     if (!records) return [];
     let result = records;
     if (selectedRep !== 'all') result = result.filter((r) => r.OwnerId === selectedRep);
-    if (selectedLob !== 'all') result = result.filter((r) => r.Line_of_Business__c === selectedLob);
+    if (selectedLob !== 'all') {
+      const lobValues = selectedLob === 'Edge Platform'
+        ? ['Edge Platform', 'Valuation']
+        : [selectedLob];
+      result = result.filter((r) => lobValues.includes(r.Line_of_Business__c));
+    }
     return result;
   }, [records, selectedRep, selectedLob]);
 }

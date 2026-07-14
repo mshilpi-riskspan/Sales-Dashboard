@@ -373,7 +373,7 @@ export default function FirmGoals() {
           <h3 className="text-sm font-semibold text-rs-text mb-0.5">Cumulative ARR vs Goal</h3>
           <p className="text-[11px] text-rs-muted mb-3">Running total vs annual target pace</p>
           <ResponsiveContainer width="100%" height={200}>
-            <ComposedChart data={cumulativeData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+            <ComposedChart data={cumulativeData} margin={{ top: 22, right: 8, bottom: 0, left: 0 }}>
               <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#858C9C' }} axisLine={false} tickLine={false} />
               <YAxis hide />
               {curMonthLabel && (

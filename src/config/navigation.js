@@ -1,3 +1,4 @@
+import FirmGoals from '../modules/goals/FirmGoals';
 import PipelineByStage from '../modules/pipeline/PipelineByStage';
 import PipelineByMonth from '../modules/pipeline/PipelineByMonth';
 import DealsAtRisk from '../modules/pipeline/DealsAtRisk';
@@ -8,6 +9,13 @@ import RepKPIs from '../modules/repkpis/RepKPIs';
 import CampaignsPage from '../modules/campaigns/CampaignsPage';
 
 export const NAV_ITEMS = [
+  {
+    id: 'goals',
+    label: 'Firm Goals',
+    icon: 'FlagIcon',
+    component: FirmGoals,
+    filters: ['salesperson'],
+  },
   {
     id: 'pipeline',
     label: 'Pipeline by Stage',

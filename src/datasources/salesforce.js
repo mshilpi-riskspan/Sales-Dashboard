@@ -246,9 +246,9 @@ export async function fetchRecentlyLost() {
      FROM Opportunity
      WHERE IsClosed = true
      AND IsWon = false
-     AND CloseDate = LAST_N_DAYS:30
+     AND LastStageChangeDate = LAST_N_DAYS:30
      AND Type != 'Renewal'
-     ORDER BY CloseDate DESC`
+     ORDER BY LastStageChangeDate DESC`
   );
   cache.set(cacheKey, { data, timestamp: Date.now() });
   return data;

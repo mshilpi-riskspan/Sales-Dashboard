@@ -78,7 +78,7 @@ export default function RepKPIs() {
       <PerformanceCharts
         oppsYtd={oppsYtd.data}
         lastYearOpps={lastYearOpps.data}
-        tasks={tasks.data}
+        openOpps={openOpps.data}
         repId={repId}
       />
       <ActivitySection metrics={metrics} loading={loading} onDrill={handleDrill} />

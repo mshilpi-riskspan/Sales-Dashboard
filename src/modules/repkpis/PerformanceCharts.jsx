@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import { startOfQuarter, getQuarter, getYear, startOfWeek, differenceInWeeks } from 'date-fns';
+import { getQuarter, getYear } from 'date-fns';
 import {
-  ComposedChart, BarChart, Bar, Line, XAxis, YAxis, Tooltip,
+  ComposedChart, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, ReferenceLine, Cell,
 } from 'recharts';
 
@@ -21,7 +21,17 @@ function getQuarterKey(dateStr) {
   return `Q${getQuarter(d)} '${String(getYear(d)).slice(2)}`;
 }
 
-export default function PerformanceCharts({ oppsYtd, lastYearOpps, tasks, repId }) {
+const STAGE_SHORT = {
+  'Initial Demo / SQL':               'Initial Demo',
+  'Technical Fit Agreement':          'Tech Fit',
+  'Proposal (pricing) Delivered':     'Proposal',
+  'Trial':                            'Trial',
+  'Negotiation & Decision Making':    'Negotiation',
+  'Contract Sent for Signature':      'Contract',
+};
+const STAGE_ORDER = Object.keys(STAGE_SHORT);
+
+export default function PerformanceCharts({ oppsYtd, lastYearOpps, openOpps, repId }) {
   const now = new Date();
   const currentYear = getYear(now);
   const currentQtr = getQuarter(now);
@@ -57,23 +67,19 @@ export default function PerformanceCharts({ oppsYtd, lastYearOpps, tasks, repId 
     }));
   }, [oppsYtd, lastYearOpps, repId, currentYear]);
 
-  // ── Weekly outreach chart ────────────────────────────────────────────────
-  const weeklyData = useMemo(() => {
-    const emailTasks = filterRep(tasks).filter(
-      (t) => t.Type === 'Email' || t.Subject?.toLowerCase().includes('outreach')
-    );
-    const qtrStart = startOfQuarter(now);
-    const totalWeeks = Math.max(1, differenceInWeeks(now, qtrStart) + 1);
-
-    const counts = Array.from({ length: totalWeeks }, () => 0);
-    emailTasks.forEach((t) => {
-      const d = new Date(t.CreatedDate);
-      const wk = differenceInWeeks(d, qtrStart);
-      if (wk >= 0 && wk < totalWeeks) counts[wk]++;
+  // ── Active pipeline by stage ─────────────────────────────────────────────
+  const pipelineByStage = useMemo(() => {
+    const repOpen = filterRep(openOpps || []);
+    return STAGE_ORDER.map((stage) => {
+      const deals = repOpen.filter((o) => o.StageName === stage);
+      return {
+        label: STAGE_SHORT[stage],
+        fullName: stage,
+        arr: deals.reduce((s, o) => s + arrOrAmount(o), 0),
+        count: deals.length,
+      };
     });
-
-    return counts.map((count, i) => ({ label: `Wk ${i + 1}`, count }));
-  }, [tasks, repId]);
+  }, [openOpps, repId]);
 
   const maxArr = Math.max(...quarterlyData.map((d) => Math.max(d.lastYear, d.thisYear)), 375000);
 
@@ -124,37 +130,32 @@ export default function PerformanceCharts({ oppsYtd, lastYearOpps, tasks, repId 
         </ResponsiveContainer>
       </div>
 
-      {/* Weekly Outreach */}
+      {/* Active Pipeline by Stage */}
       <div className="col-span-2 rounded-card border border-rs-border bg-white p-4">
-        <h3 className="text-sm font-semibold text-rs-text mb-0.5">Weekly Outreach Activity</h3>
-        <p className="text-[11px] text-rs-muted mb-3">Emails + outreach tasks · goal: 10/week</p>
+        <h3 className="text-sm font-semibold text-rs-text mb-0.5">Active Pipeline by Stage</h3>
+        <p className="text-[11px] text-rs-muted mb-3">Open deal ARR across the funnel</p>
         <ResponsiveContainer width="100%" height={180}>
-          <BarChart data={weeklyData} margin={{ top: 16, right: 8, bottom: 0, left: 0 }} barCategoryGap="28%">
-            <XAxis dataKey="label" tick={{ fontSize: 10, fill: '#858C9C' }} axisLine={false} tickLine={false} />
+          <BarChart data={pipelineByStage} margin={{ top: 16, right: 8, bottom: 0, left: 0 }} barCategoryGap="24%">
+            <XAxis dataKey="label" tick={{ fontSize: 9, fill: '#858C9C' }} axisLine={false} tickLine={false} />
             <YAxis hide />
-            <ReferenceLine y={10} stroke="#858C9C" strokeDasharray="4 4" strokeOpacity={0.7}
-              label={{ value: '10', position: 'right', fontSize: 9, fill: '#858C9C' }} />
             <Tooltip
               cursor={{ fill: 'rgba(12,142,163,0.06)' }}
-              content={({ active, payload, label }) => {
+              content={({ active, payload }) => {
                 if (!active || !payload?.length) return null;
-                const v = payload[0].value;
+                const d = payload[0].payload;
                 return (
                   <div className="bg-white border border-rs-border rounded-lg px-3 py-2 shadow-sm text-xs">
-                    <p className="font-semibold text-rs-text">{label}</p>
-                    <p className={v >= 10 ? 'text-green-600' : v >= 7 ? 'text-amber-600' : 'text-red-500'}>
-                      {v} outreach{v !== 1 ? 'es' : ''}
-                    </p>
+                    <p className="font-semibold text-rs-text mb-1">{d.fullName}</p>
+                    <p className="text-rs-teal">{formatM(d.arr)} ARR</p>
+                    <p className="text-rs-muted">{d.count} deal{d.count !== 1 ? 's' : ''}</p>
                   </div>
                 );
               }}
             />
-            <Bar dataKey="count" radius={[3, 3, 0, 0]}>
-              {weeklyData.map((entry, i) => (
-                <Cell
-                  key={i}
-                  fill={entry.count >= 10 ? '#22C55E' : entry.count >= 7 ? '#FBBF24' : '#0C8EA380'}
-                />
+            <Bar dataKey="arr" radius={[3, 3, 0, 0]}
+              label={{ position: 'top', fontSize: 9, fill: '#858C9C', formatter: (v) => v > 0 ? formatM(v) : '' }}>
+              {pipelineByStage.map((entry, i) => (
+                <Cell key={i} fill={entry.arr > 0 ? '#0C8EA3' : '#DADEE580'} />
               ))}
             </Bar>
           </BarChart>

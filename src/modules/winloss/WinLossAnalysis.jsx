@@ -401,14 +401,7 @@ export default function WinLossAnalysis() {
             <p className="text-[10px] text-rs-muted uppercase tracking-wide font-medium">Deals Lost</p>
             <p className="text-2xl font-bold text-red-500">{lost.length}</p>
           </div>
-          {/* Chart legend */}
-          <div className="ml-auto flex items-center gap-4 text-xs text-rs-muted">
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-rs-teal inline-block" /> Won</span>
-            <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-[#DADEE5] inline-block" /> Lost</span>
-          </div>
         </div>
-
-        <WinLossChart monthData={monthData} />
       </div>
 
       {/* ── Rep breakdown ──────────────────────────────────────────────────── */}

@@ -122,23 +122,20 @@ export default function PipelineByStage() {
     });
   }, [filteredOpen, selectedScope, currentYear]);
 
-  const { stageData, otherDeals } = useMemo(() => {
+  const stageData = useMemo(() => {
     const map = {};
     for (const stage of SALES_STAGES) {
       map[stage.name] = { deals: [], totalArr: 0 };
     }
-    const other = [];
 
     for (const opp of scopedOpen) {
       if (map[opp.StageName] !== undefined && opp.StageName !== 'Closed Won') {
         map[opp.StageName].deals.push(opp);
         map[opp.StageName].totalArr += opp.Annual_Recurring_Revenue_ARR__c ?? opp.Amount ?? 0;
-      } else if (map[opp.StageName] === undefined) {
-        other.push(opp);
       }
     }
 
-    return { stageData: map, otherDeals: other };
+    return map;
   }, [scopedOpen]);
 
   if (loading) {
@@ -190,14 +187,6 @@ export default function PipelineByStage() {
             onDealClick={setActiveDeal}
           />
         ))}
-        {otherDeals.length > 0 && (
-          <StageCard
-            key="other"
-            stage={{ id: 'other', order: '—', name: 'Other Stages', dayLimit: null, definition: 'Deals in stages outside the core 7-stage pipeline (e.g. Renewal Pending, Qualifying, Engaged).', exitCriteria: 'N/A' }}
-            deals={otherDeals}
-            onDealClick={setActiveDeal}
-          />
-        )}
       </div>
 
       <PipelineListPanel

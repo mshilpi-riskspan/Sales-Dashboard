@@ -11,7 +11,15 @@ export function DashboardProvider({ children }) {
   const [refreshCount, setRefreshCount] = useState(0);
 
   useEffect(() => {
+    const ALLOWED_REPS = [
+      'Becky', 'Chris K', 'Dan Flei', 'David A', 'Derek R',
+      'Dan Kim', 'Franklin', 'Jen Press', 'Kuoping',
+      'Patrick D', 'Samuel Merrick', 'Suhrud', 'Thomas', 'Tim Willis',
+    ];
     fetchAllReps()
+      .then((reps) => reps.filter((r) =>
+        ALLOWED_REPS.some((f) => r.name.toLowerCase().includes(f.toLowerCase()))
+      ))
       .then(setRepList)
       .catch(() => setRepList([]));
   }, [refreshCount]);

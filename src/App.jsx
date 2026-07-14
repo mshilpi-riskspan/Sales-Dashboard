@@ -17,7 +17,7 @@ export default function App() {
       <div className="flex h-screen overflow-hidden w-full">
         <Sidebar navItems={NAV_ITEMS} activePage={activePage} onNavigate={setActivePage} />
         <div className="flex flex-col flex-1 overflow-hidden">
-          <Topbar pageTitle={activeItem.label} showRepFilter={showRepFilter} />
+          <Topbar pageTitle={activeItem.label} showRepFilter={showRepFilter} activePage={activePage} />
           <main className="flex-1 overflow-y-auto bg-white">
             <PageShell>
               <ActiveComponent />

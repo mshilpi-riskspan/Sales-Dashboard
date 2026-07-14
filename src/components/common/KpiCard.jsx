@@ -1,21 +1,9 @@
 const COLOR_SCHEMES = {
-  activity: { header: '#FFA91D', headerText: '#7c2d12' },
-  pipeline: { header: '#0C8EA3', headerText: '#ffffff' },
-  dealProgression: { header: '#16A34A', headerText: '#ffffff' },
-  revenue: { header: '#7C3AED', headerText: '#ffffff' },
+  activity:        { header: '#1C2E59', headerText: '#ffffff' },
+  pipeline:        { header: '#1C2E59', headerText: '#ffffff' },
+  dealProgression: { header: '#1C2E59', headerText: '#ffffff' },
+  revenue:         { header: '#1C2E59', headerText: '#ffffff' },
 };
-
-function goalBarColor(pct) {
-  if (pct >= 100) return 'bg-green-500';
-  if (pct >= 75)  return 'bg-amber-400';
-  return 'bg-red-400';
-}
-
-function goalTextColor(pct) {
-  if (pct >= 100) return 'text-green-600';
-  if (pct >= 75)  return 'text-amber-600';
-  return 'text-red-500';
-}
 
 export default function KpiCard({
   title, value, subtitle, category = 'pipeline', loading = false, onClick,
@@ -23,6 +11,7 @@ export default function KpiCard({
 }) {
   const scheme = COLOR_SCHEMES[category] || COLOR_SCHEMES.pipeline;
   const showGoal = goal != null && goalPct != null;
+  const pctText = goalPct >= 100 ? 'text-green-600' : goalPct >= 75 ? 'text-amber-600' : 'text-red-500';
 
   return (
     <div
@@ -50,11 +39,11 @@ export default function KpiCard({
               <div className="mt-2">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-[11px] text-rs-muted">{goalLabel}</span>
-                  <span className={`text-[11px] font-semibold ${goalTextColor(goalPct)}`}>{Math.round(goalPct)}%</span>
+                  <span className={`text-[11px] font-semibold ${pctText}`}>{Math.round(goalPct)}%</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-rs-border overflow-hidden">
                   <div
-                    className={`h-full rounded-full transition-all ${goalBarColor(goalPct)}`}
+                    className="h-full rounded-full bg-rs-teal transition-all"
                     style={{ width: `${Math.min(goalPct, 100)}%` }}
                   />
                 </div>

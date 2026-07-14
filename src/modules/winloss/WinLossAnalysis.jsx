@@ -331,7 +331,12 @@ export default function WinLossAnalysis() {
 
   const filteredRecentLost = useRepFilter(recentLostRaw);
   const recentLost = useMemo(() => (
-    [...(filteredRecentLost || [])].sort((a, b) => new Date(b.LastStageChangeDate) - new Date(a.LastStageChangeDate))
+    [...(filteredRecentLost || [])]
+      .filter(d => {
+        const exp = (d.Closed_Lost_Reason_Explanation__c || '').toLowerCase();
+        return !exp.includes('not a qualified');
+      })
+      .sort((a, b) => new Date(b.LastStageChangeDate) - new Date(a.LastStageChangeDate))
   ), [filteredRecentLost]);
 
   const totalArr = won.reduce((s, d) => s + (d.Annual_Recurring_Revenue_ARR__c ?? d.Amount ?? 0), 0);

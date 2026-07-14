@@ -224,7 +224,7 @@ function RecentlyLost({ deals = [], onDealClick }) {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                {['Account', 'AE Owner', 'ARR', 'Marked Lost', 'Loss Reason', 'Explanation'].map(h => (
+                {['Account', 'AE Owner', 'Type', 'ARR', 'Marked Lost', 'Loss Reason', 'Explanation'].map(h => (
                   <th key={h} className="bg-red-600 text-white px-3 py-2 text-left text-xs font-semibold tracking-wide">{h}</th>
                 ))}
               </tr>
@@ -240,6 +240,17 @@ function RecentlyLost({ deals = [], onDealClick }) {
                   >
                     <td className="px-3 py-2 font-medium text-rs-text">{deal.Account?.Name || '—'}</td>
                     <td className="px-3 py-2 text-rs-muted">{deal.Owner?.Name || '—'}</td>
+                    <td className="px-3 py-2">
+                      {deal.Type ? (
+                        <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium whitespace-nowrap ${
+                          deal.Type === 'New Account' ? 'bg-rs-teal/10 text-rs-teal' :
+                          deal.Type === 'Upsell'      ? 'bg-amber-50 text-amber-700' :
+                          deal.Type === 'Cross-Sell'  ? 'bg-green-50 text-green-700' :
+                          deal.Type === 'Renewal'     ? 'bg-purple-50 text-purple-600' :
+                          'bg-rs-surface text-rs-muted'
+                        }`}>{deal.Type}</span>
+                      ) : '—'}
+                    </td>
                     <td className="px-3 py-2 font-semibold text-rs-text">{formatARR(arr)}</td>
                     <td className="px-3 py-2 text-rs-muted whitespace-nowrap">
                       {deal.LastStageChangeDate ? format(new Date(deal.LastStageChangeDate.slice(0, 10) + 'T00:00:00'), 'MMM d') : '—'}

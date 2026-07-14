@@ -28,6 +28,15 @@ function getStatusStyle(label) {
   return STATUS_STYLES[label] || DEFAULT_STYLE;
 }
 
+const STATUS_DISPLAY_NAME = {
+  'Uncontacted': 'Person Identified',
+  'Contacted':   'Reach Out Attempted',
+};
+
+function displayStatus(label) {
+  return STATUS_DISPLAY_NAME[label] || label;
+}
+
 // ── Formatting helpers ───────────────────────────────────────────────────────
 function relativeDate(dateStr) {
   if (!dateStr) return null;
@@ -205,7 +214,7 @@ function StageCard({ statusLabel, members, onCompanyClick }) {
       <div className={`flex items-center justify-between px-4 py-3 border-b border-rs-border ${style.headerBg}`}>
         <div className="flex items-center gap-2">
           <span className={`w-2.5 h-2.5 rounded-full ${style.dotCls}`} />
-          <h3 className={`text-sm font-semibold ${style.accentCls}`}>{statusLabel}</h3>
+          <h3 className={`text-sm font-semibold ${style.accentCls}`}>{displayStatus(statusLabel)}</h3>
         </div>
         <div className="flex items-center gap-3">
           <span className="text-xs text-rs-muted font-medium">
@@ -578,7 +587,7 @@ function MemberPanel({ companyMembers, campaignOpps, onClose, onDealClick }) {
                   </div>
                   <div className="shrink-0 text-right">
                     <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-full whitespace-nowrap ${s.badgeCls}`}>
-                      {m.Status}
+                      {displayStatus(m.Status)}
                     </span>
                     {m.HasResponded && (
                       <p className="text-[10px] text-green-600 mt-1">✓ Responded</p>

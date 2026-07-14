@@ -274,7 +274,7 @@ function RecentlyLost({ deals = [], onDealClick }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function WinLossAnalysis() {
-  const { triggerRefresh, refreshCount } = useDashboard();
+  const { triggerRefresh, refreshCount, repList } = useDashboard();
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [rawData, setRawData] = useState([]);
@@ -322,12 +322,14 @@ export default function WinLossAnalysis() {
       if (d.IsWon) { r.won++; r.arrWon += arr; }
       else { r.lost++; r.arrLost += arr; }
     }
+    const allowedRepIds = new Set(repList.map(r => r.id));
     const repRows = Array.from(repMap.values())
+      .filter(r => allowedRepIds.has(r.ownerId))
       .map(r => ({ ...r, winRate: pct(r.won, r.won + r.lost) }))
       .sort((a, b) => (b.winRate ?? -1) - (a.winRate ?? -1));
 
     return { won, lost, monthData, repRows };
-  }, [filtered]);
+  }, [filtered, repList]);
 
   const filteredRecentLost = useRepFilter(recentLostRaw);
   const recentLost = useMemo(() => (

@@ -1,6 +1,6 @@
 import { useMemo, useState, useCallback } from 'react';
 import { useSalesforceQuery } from '../../hooks/useSalesforceQuery';
-import { fetchTasksThisQuarter, fetchEventsThisQuarter, fetchOppsThisQuarter, fetchOppsYTD, fetchOpenOpportunities } from '../../datasources/salesforce';
+import { fetchTasksThisQuarter, fetchEventsThisQuarter, fetchOppsThisQuarter, fetchOppsYTD, fetchOpenOpportunities, fetchClosedOppsInYear } from '../../datasources/salesforce';
 import { useRepFilter } from '../../hooks/useRepFilter';
 import { useDashboard } from '../../context/DashboardContext';
 import { computeMetrics, computePerRepMetrics } from './metrics';
@@ -8,11 +8,15 @@ import ActivitySection from './ActivitySection';
 import PipelineGrowthSection from './PipelineGrowthSection';
 import DealProgressionSection from './DealProgressionSection';
 import RevenueSection from './RevenueSection';
+import PerformanceCharts from './PerformanceCharts';
 import RepBreakdownTable from './RepBreakdownTable';
 import KpiDrillPanel from './KpiDrillPanel';
 import DealDetailPanel from '../../components/common/DealDetailPanel';
 import ErrorState from '../../components/common/ErrorState';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
+
+const lastYear = new Date().getFullYear() - 1;
+const lastYearQueryFn = () => fetchClosedOppsInYear(lastYear);
 
 function useAllQueries() {
   const tasks = useSalesforceQuery(fetchTasksThisQuarter);
@@ -20,12 +24,13 @@ function useAllQueries() {
   const oppsQtr = useSalesforceQuery(fetchOppsThisQuarter);
   const oppsYtd = useSalesforceQuery(fetchOppsYTD);
   const openOpps = useSalesforceQuery(fetchOpenOpportunities);
-  return { tasks, events, oppsQtr, oppsYtd, openOpps };
+  const lastYearOpps = useSalesforceQuery(lastYearQueryFn);
+  return { tasks, events, oppsQtr, oppsYtd, openOpps, lastYearOpps };
 }
 
 export default function RepKPIs() {
   const { selectedRep, repList, triggerRefresh } = useDashboard();
-  const { tasks, events, oppsQtr, oppsYtd, openOpps } = useAllQueries();
+  const { tasks, events, oppsQtr, oppsYtd, openOpps, lastYearOpps } = useAllQueries();
   const [drillState, setDrillState] = useState(null); // { title, records, type }
   const [activeDeal, setActiveDeal] = useState(null);
 
@@ -70,6 +75,12 @@ export default function RepKPIs() {
 
   return (
     <div className="space-y-8">
+      <PerformanceCharts
+        oppsYtd={oppsYtd.data}
+        lastYearOpps={lastYearOpps.data}
+        tasks={tasks.data}
+        repId={repId}
+      />
       <ActivitySection metrics={metrics} loading={loading} onDrill={handleDrill} />
       <PipelineGrowthSection metrics={metrics} loading={loading} onDrill={handleDrill} />
       <DealProgressionSection metrics={metrics} loading={loading} onDrill={handleDrill} />

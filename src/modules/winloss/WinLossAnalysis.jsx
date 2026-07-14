@@ -334,10 +334,13 @@ export default function WinLossAnalysis() {
     [...(filteredRecentLost || [])]
       .filter(d => {
         const exp = (d.Closed_Lost_Reason_Explanation__c || '').toLowerCase();
-        return !exp.includes('not a qualified');
+        if (exp.includes('not a qualified')) return false;
+        if (!d.CloseDate) return false;
+        const closeYear = new Date(d.CloseDate + 'T00:00:00').getFullYear();
+        return closeYear === selectedYear;
       })
       .sort((a, b) => new Date(b.LastStageChangeDate) - new Date(a.LastStageChangeDate))
-  ), [filteredRecentLost]);
+  ), [filteredRecentLost, selectedYear]);
 
   const totalArr = won.reduce((s, d) => s + (d.Annual_Recurring_Revenue_ARR__c ?? d.Amount ?? 0), 0);
   const winRate = pct(won.length, won.length + lost.length);

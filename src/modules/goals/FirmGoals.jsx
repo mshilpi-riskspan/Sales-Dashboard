@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { format, getMonth, getYear } from 'date-fns';
 import {
-  ChevronLeftIcon, ChevronRightIcon, ChevronDownIcon, ChevronUpIcon,
+  ChevronDownIcon, ChevronUpIcon,
   PencilIcon, CheckIcon, XMarkIcon,
 } from '@heroicons/react/24/outline';
 import {
@@ -249,7 +249,7 @@ function GoalGroupCard({ type, deals, goal, onDealClick }) {
 export default function FirmGoals() {
   const { triggerRefresh } = useDashboard();
   const currentYear = new Date().getFullYear();
-  const [selectedYear, setSelectedYear] = useState(currentYear);
+  const selectedYear = currentYear;
   const [goals, setGoals] = useState(() => loadGoals(currentYear));
   const [editOpen, setEditOpen] = useState(false);
   const [activeDeal, setActiveDeal] = useState(null);
@@ -257,13 +257,6 @@ export default function FirmGoals() {
   const queryFn = useMemo(() => () => fetchClosedOppsInYear(selectedYear), [selectedYear]);
   const { data: rawData, loading, error } = useSalesforceQuery(queryFn);
   const filtered = useRepFilter(rawData);
-
-  const handleYearChange = (delta) => {
-    const y = selectedYear + delta;
-    setSelectedYear(y);
-    setGoals(loadGoals(y));
-    setEditOpen(false);
-  };
 
   const handleSaveGoals = (newGoals) => {
     persistGoals(selectedYear, newGoals);
@@ -331,15 +324,6 @@ export default function FirmGoals() {
               <PencilIcon className="h-3.5 w-3.5" />
               Edit Goals
             </button>
-            <div className="flex items-center gap-1 border border-rs-border rounded-lg px-2 py-1">
-              <button onClick={() => handleYearChange(-1)} className="text-rs-muted hover:text-rs-text p-0.5">
-                <ChevronLeftIcon className="h-3.5 w-3.5" />
-              </button>
-              <span className="text-sm font-semibold text-rs-text w-12 text-center">{selectedYear}</span>
-              <button onClick={() => handleYearChange(1)} className="text-rs-muted hover:text-rs-text p-0.5">
-                <ChevronRightIcon className="h-3.5 w-3.5" />
-              </button>
-            </div>
           </div>
         </div>
 

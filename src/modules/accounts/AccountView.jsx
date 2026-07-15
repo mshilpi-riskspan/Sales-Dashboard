@@ -319,31 +319,39 @@ export default function AccountView({ accountId, onBack }) {
           <SectionLabel>Key Contacts</SectionLabel>
           {loading ? (
             <div className="space-y-2">
-              {[1, 2].map(i => <Skeleton key={i} className="h-12 w-full" />)}
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
             </div>
           ) : (contacts || []).length === 0 ? (
             <p className="text-xs text-rs-muted">No contacts found in Salesforce for this account.</p>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div className="border border-rs-border rounded-lg overflow-hidden">
               {contacts.map(c => {
                 const name = [c.FirstName, c.LastName].filter(Boolean).join(' ') || '—';
-                const initials = [c.FirstName?.[0], c.LastName?.[0]].filter(Boolean).join('').toUpperCase();
+                const initials = ((c.FirstName?.[0] || '') + (c.LastName?.[0] || '')).toUpperCase() || '?';
+                const lastActive = c.LastActivityDate ? relativeDate(c.LastActivityDate) : null;
                 return (
-                  <div key={c.Id} className="flex items-center gap-3 p-2.5 rounded-lg bg-rs-surface/50 border border-rs-border/30">
-                    <div className="w-8 h-8 rounded-full bg-rs-navy flex items-center justify-center text-white text-xs font-semibold shrink-0">
-                      {initials || '?'}
+                  <div key={c.Id} className="flex items-start gap-3 px-3 py-2.5 border-b border-rs-border/50 last:border-0">
+                    <div className="shrink-0 w-7 h-7 rounded-full bg-rs-teal/15 text-rs-teal flex items-center justify-center text-[11px] font-semibold">
+                      {initials}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-rs-text">{name}</p>
-                      {c.Title && <p className="text-[10px] text-rs-muted truncate">{c.Title}</p>}
-                      {c.Email && (
-                        <a
-                          href={`mailto:${c.Email}`}
-                          className="text-[10px] text-rs-teal hover:underline block truncate"
-                        >
-                          {c.Email}
-                        </a>
-                      )}
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-xs font-medium text-rs-text leading-tight">{name}</p>
+                        {lastActive && <span className="text-[10px] text-rs-muted shrink-0">{lastActive}</span>}
+                      </div>
+                      {c.Title && <p className="text-[10px] text-rs-muted mt-0.5 leading-snug">{c.Title}</p>}
+                      <div className="flex items-center gap-3 mt-0.5 flex-wrap">
+                        {c.Email && (
+                          <a href={`mailto:${c.Email}`} className="text-[10px] text-rs-teal hover:underline truncate">
+                            {c.Email}
+                          </a>
+                        )}
+                        {c.Phone && (
+                          <a href={`tel:${c.Phone}`} className="text-[10px] text-rs-muted hover:text-rs-teal hover:underline shrink-0 transition-colors">
+                            {c.Phone}
+                          </a>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

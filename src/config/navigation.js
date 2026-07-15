@@ -1,4 +1,5 @@
 import FirmGoals from '../modules/goals/FirmGoals';
+import AccountsPage from '../modules/accounts/AccountsPage';
 import PipelineByStage from '../modules/pipeline/PipelineByStage';
 import PipelineByMonth from '../modules/pipeline/PipelineByMonth';
 import WinLossAnalysis from '../modules/winloss/WinLossAnalysis';
@@ -13,6 +14,13 @@ export const NAV_ITEMS = [
     label: 'Firm Goals',
     icon: 'FlagIcon',
     component: FirmGoals,
+    filters: ['salesperson'],
+  },
+  {
+    id: 'accounts',
+    label: 'Accounts',
+    icon: 'BuildingOffice2Icon',
+    component: AccountsPage,
     filters: ['salesperson'],
   },
   {

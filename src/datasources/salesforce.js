@@ -171,7 +171,11 @@ export async function fetchAccountDetail(accountId) {
   if (isCacheValid(cached)) return cached.data;
 
   const { sessionId: sid, instanceUrl: base } = await getSession();
-  const soql = `SELECT Id, Name, Industry, Type, Website, Phone, Description, AnnualRevenue, BillingCity, BillingState, OwnerId, Owner.Name FROM Account WHERE Id = '${accountId}'`;
+  const soql = `SELECT Id, Name, Industry, Type, Website, Phone, Description, AnnualRevenue,
+    BillingCity, BillingState, OwnerId, Owner.Name,
+    AccountType_Tier__c, Current_ARR__c, Sales_Lead__r.Name,
+    Sales_Next_Steps__c, Existing_Connections__c, LastActivityDate
+    FROM Account WHERE Id = '${accountId}'`;
   const proxied = `${base}/services/data/v60.0/query/?q=${encodeURIComponent(soql)}`.replace(/^https:\/\/[^/]+/, '/sf-api');
 
   const res = await fetch(proxied, { headers: { Authorization: `Bearer ${sid}` } });
@@ -405,6 +409,33 @@ export async function fetchEventsInYear(year) {
      ORDER BY StartDateTime DESC
      LIMIT 5000`
   );
+}
+
+export async function fetchAllAccounts() {
+  return queryAll(
+    `SELECT Id, Name, AccountType_Tier__c, Industry,
+     Sales_Lead__r.Name, Current_ARR__c,
+     LastActivityDate, OwnerId, Owner.Name,
+     BillingCity, BillingState, Type
+     FROM Account WHERE Name != null ORDER BY Name ASC LIMIT 2000`
+  );
+}
+
+export async function fetchAccountOpportunities(accountId) {
+  const cacheKey = `account:opps:${accountId}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  const data = await queryAll(
+    `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c,
+     OwnerId, Owner.Name, CloseDate, CreatedDate, IsClosed, IsWon,
+     Type, Primary_Module__c, Line_of_Business__c, ForecastCategoryName,
+     LastStageChangeDate, AccountId
+     FROM Opportunity WHERE AccountId = '${accountId}'
+     ORDER BY CloseDate DESC LIMIT 50`
+  );
+  cache.set(cacheKey, { data, timestamp: Date.now() });
+  return data;
 }
 
 export async function fetchAllReps() {

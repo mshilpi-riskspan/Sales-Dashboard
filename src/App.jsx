@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DashboardProvider } from './context/DashboardContext';
 import { NAV_ITEMS } from './config/navigation';
 import Sidebar from './components/layout/Sidebar';
@@ -7,6 +7,17 @@ import PageShell from './components/layout/PageShell';
 
 export default function App() {
   const [activePage, setActivePage] = useState(NAV_ITEMS[0].id);
+
+  useEffect(() => {
+    function onKeyDown(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setActivePage('accounts');
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
 
   const activeItem = NAV_ITEMS.find((n) => n.id === activePage) || NAV_ITEMS[0];
   const ActiveComponent = activeItem.component;

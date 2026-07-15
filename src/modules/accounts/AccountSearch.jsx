@@ -37,6 +37,7 @@ function relativeDate(dateStr) {
   if (!dateStr) return '—';
   const d = new Date(dateStr.length === 10 ? dateStr + 'T00:00:00' : dateStr);
   const diff = Math.floor((Date.now() - d) / 86400000);
+  if (diff < 0) return '—';
   if (diff === 0) return 'Today';
   if (diff === 1) return 'Yesterday';
   if (diff < 30) return `${diff}d ago`;

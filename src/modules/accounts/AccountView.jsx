@@ -21,6 +21,7 @@ function relativeDate(dateStr) {
   if (!dateStr) return '—';
   const d = new Date(dateStr.length === 10 ? dateStr + 'T00:00:00' : dateStr);
   const diff = Math.floor((Date.now() - d) / 86400000);
+  if (diff < 0) return 'Upcoming';
   if (diff === 0) return 'Today';
   if (diff === 1) return 'Yesterday';
   if (diff < 30) return `${diff}d ago`;
@@ -144,6 +145,13 @@ export default function AccountView({ accountId, onBack }) {
   const openARR = openOpps.reduce((s, o) => s + (o.Annual_Recurring_Revenue_ARR__c || 0), 0);
   const wonARR = wonOpps.reduce((s, o) => s + (o.Annual_Recurring_Revenue_ARR__c || 0), 0);
 
+  // Derive last activity from fetched activities (more reliable than SF's LastActivityDate rollup)
+  const lastActivityDate = allActivities.length > 0
+    ? (allActivities[0]._type === 'task'
+        ? allActivities[0].ActivityDate
+        : allActivities[0].StartDateTime?.slice(0, 10))
+    : null;
+
   const clientStatus = account?.AccountType_Tier__c?.toLowerCase().includes('client') ? 'Client' : 'Prospect';
 
   return (
@@ -221,7 +229,7 @@ export default function AccountView({ accountId, onBack }) {
             {[
               { label: 'Current ARR', value: loading ? null : formatARR(account?.Current_ARR__c) },
               { label: 'Open Deals', value: loading ? null : (opps ? openOpps.length : '—') },
-              { label: 'Last Activity', value: loading ? null : relativeDate(account?.LastActivityDate) },
+              { label: 'Last Activity', value: (loading || activities === null) ? null : (lastActivityDate ? relativeDate(lastActivityDate) : '—') },
             ].map(({ label, value }) => (
               <div key={label} className="bg-rs-surface rounded-lg p-3">
                 <p className="text-[10px] uppercase tracking-widest text-rs-muted">{label}</p>

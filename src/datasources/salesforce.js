@@ -417,7 +417,7 @@ export async function fetchAllAccounts() {
      Sales_Lead__r.Name, Current_ARR__c,
      LastActivityDate, OwnerId, Owner.Name,
      BillingCity, BillingState, Type
-     FROM Account WHERE Name != null ORDER BY Name ASC LIMIT 2000`
+     FROM Account WHERE Name != null ORDER BY Name ASC`
   );
 }
 

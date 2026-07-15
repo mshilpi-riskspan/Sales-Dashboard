@@ -136,7 +136,6 @@ function ResultsTable({ rows, focusedIndex, similarNameIds, stageMap, onSelect }
             <th className="text-left px-3 py-2 font-semibold hidden lg:table-cell">Owner</th>
             <th className="text-right px-3 py-2 font-semibold">ARR</th>
             <th className="text-right px-3 py-2 font-semibold hidden sm:table-cell">Opps</th>
-            <th className="text-right px-3 py-2 font-semibold hidden lg:table-cell">Last Activity</th>
           </tr>
         </thead>
         <tbody>
@@ -184,9 +183,6 @@ function ResultsTable({ rows, focusedIndex, similarNameIds, stageMap, onSelect }
                 </td>
                 <td className="px-3 py-2.5 text-right text-rs-muted hidden sm:table-cell">
                   {stageMap ? (stageMap.get(account.Id)?.size ?? 0) : '—'}
-                </td>
-                <td className="px-3 py-2.5 text-right text-rs-muted hidden lg:table-cell">
-                  {relativeDate(account.LastActivityDate)}
                 </td>
               </tr>
             );

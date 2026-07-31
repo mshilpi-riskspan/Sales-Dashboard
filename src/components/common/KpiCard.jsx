@@ -33,12 +33,17 @@ export default function KpiCard({
           </div>
         ) : (
           <>
-            <p className="text-2xl font-bold text-rs-text">{value ?? '—'}</p>
-            {subtitle && !showGoal && <p className="mt-0.5 text-xs text-rs-muted">{subtitle}</p>}
+            {showGoal ? (
+              <p className="text-xl font-bold text-rs-text leading-snug">{goalLabel}</p>
+            ) : (
+              <>
+                <p className="text-2xl font-bold text-rs-text">{value ?? '—'}</p>
+                {subtitle && <p className="mt-0.5 text-xs text-rs-muted">{subtitle}</p>}
+              </>
+            )}
             {showGoal && (
               <div className="mt-2">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] text-rs-muted">{goalLabel}</span>
+                <div className="flex items-center justify-end mb-1">
                   <span className={`text-[11px] font-semibold ${pctText}`}>{Math.round(goalPct)}%</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-rs-border overflow-hidden">

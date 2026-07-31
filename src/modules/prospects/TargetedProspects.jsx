@@ -70,11 +70,17 @@ function buildRollups(targetAccounts, openOpps, wonOpps, activities) {
       ...eventsForAcct.map((e) => e.StartDateTime?.slice(0, 10)).filter(Boolean),
     ].sort((a, b) => b.localeCompare(a));
 
+    // Not every open-opp StageName is in the formal 6-stage STAGE_MAP — earlier
+    // funnel stages (Get Started Form, Qualifying, Engaged, Target Prospect,
+    // SDR Outbound, Later (Nurturing)) exist in Salesforce but aren't part of the
+    // canonical pipeline. Formal stages always outrank informal ones, but an
+    // account with only an informal-stage opp should still show that stage name
+    // rather than a blank dash.
     let furthestStage = null;
     let furthestOrder = -1;
     for (const o of openForAcct) {
-      const order = STAGE_MAP[o.StageName]?.order ?? -1;
-      if (order > furthestOrder) {
+      const order = STAGE_MAP[o.StageName]?.order ?? 0;
+      if (furthestStage === null || order > furthestOrder) {
         furthestOrder = order;
         furthestStage = o.StageName;
       }

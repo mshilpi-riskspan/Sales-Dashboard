@@ -4,13 +4,12 @@ import { useDashboard } from '../../context/DashboardContext';
 import LoadingSpinner from '../common/LoadingSpinner';
 import RepFilterDropdown from '../common/RepFilterDropdown';
 import { useState } from 'react';
-
-const REP_KPI_NAMES = ['Samuel Merrick', 'Chris K', 'Franklin', 'Becky'];
+import { TRACKED_REP_NAMES } from '../../config/repGoals';
 
 export default function Topbar({ pageTitle, showRepFilter = false, activePage }) {
   const { selectedRep, setSelectedRep, repList, lastRefreshed, triggerRefresh } = useDashboard();
   const displayReps = activePage === 'repkpis'
-    ? repList.filter((r) => REP_KPI_NAMES.some((f) => r.name.toLowerCase().includes(f.toLowerCase())))
+    ? repList.filter((r) => TRACKED_REP_NAMES.some((f) => r.name.toLowerCase().includes(f.toLowerCase())))
     : repList;
   const [refreshing, setRefreshing] = useState(false);
 

@@ -17,7 +17,7 @@ export default function DealProgressionSection({ metrics, loading, onDrill }) {
           category="dealProgression"
           loading={loading}
           goal={4}
-          goalLabel="Goal: ≥4 active"
+          goalLabel={`${metrics?.technicalFitDeals ?? 0}/4 active`}
           goalPct={techFitPct}
           onClick={onDrill ? () => onDrill('Deals at Technical Fit', metrics?._technicalFitOpps, 'opps') : undefined}
         />
@@ -27,7 +27,7 @@ export default function DealProgressionSection({ metrics, loading, onDrill }) {
           category="dealProgression"
           loading={loading}
           goal={65}
-          goalLabel="Goal: ≥65%"
+          goalLabel={`${metrics?.trialToProposalRate ?? '—'} of 65% goal`}
           goalPct={trialPct}
           onClick={onDrill ? () => onDrill('Trial Stage & Beyond', metrics?._trialAndLaterOpps, 'opps') : undefined}
         />
@@ -40,7 +40,7 @@ export default function DealProgressionSection({ metrics, loading, onDrill }) {
           category="dealProgression"
           loading={loading}
           goal={stage2Pct != null ? 40 : undefined}
-          goalLabel="Goal: <40 days"
+          goalLabel={`${metrics?.stage2Velocity ?? '—'} vs 40d limit`}
           goalPct={stage2Pct}
           onClick={onDrill && metrics?._stage2Opps?.length ? () => onDrill('Technical Fit Deals', metrics._stage2Opps, 'opps') : undefined}
         />
@@ -51,7 +51,7 @@ export default function DealProgressionSection({ metrics, loading, onDrill }) {
           category="dealProgression"
           loading={loading}
           goal={stage4Pct != null ? 47 : undefined}
-          goalLabel="Goal: <47 days"
+          goalLabel={`${metrics?.stage4Velocity ?? '—'} vs 47d limit`}
           goalPct={stage4Pct}
           onClick={onDrill && metrics?._stage4Opps?.length ? () => onDrill('Trial Deals', metrics._stage4Opps, 'opps') : undefined}
         />

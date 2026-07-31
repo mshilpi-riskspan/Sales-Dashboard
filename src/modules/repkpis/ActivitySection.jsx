@@ -14,7 +14,7 @@ export default function ActivitySection({ metrics, loading, onDrill }) {
           category="activity"
           loading={loading}
           goal={10}
-          goalLabel="Goal: ≥10/week"
+          goalLabel={`${metrics?.outboundPerWeek ?? '0'}/10 per week`}
           goalPct={outboundPct}
           onClick={onDrill ? () => onDrill('Outbound Emails', metrics?._emailTasks, 'tasks') : undefined}
         />
@@ -24,7 +24,7 @@ export default function ActivitySection({ metrics, loading, onDrill }) {
           category="activity"
           loading={loading}
           goal={5}
-          goalLabel="Goal: ≥5/month"
+          goalLabel={`${metrics?.meetingsPerMonth ?? '0'}/5 per month`}
           goalPct={meetingsPct}
           onClick={onDrill ? () => onDrill('Meetings This Quarter', metrics?._meetingActivities, 'activities') : undefined}
         />

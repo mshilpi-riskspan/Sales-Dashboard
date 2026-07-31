@@ -16,7 +16,7 @@ export default function RevenueSection({ metrics, loading, onDrill }) {
           category="revenue"
           loading={loading}
           goal={ARR_QTR_GOAL}
-          goalLabel="Goal: $375K/quarter"
+          goalLabel={`${metrics?.arrClosedQtr ?? '$0'}/$375K this quarter`}
           goalPct={arrQtrPct}
           onClick={onDrill ? () => onDrill('ARR Closed This Quarter', metrics?._closedQtrOpps, 'opps') : undefined}
         />
@@ -34,7 +34,7 @@ export default function RevenueSection({ metrics, loading, onDrill }) {
           category="revenue"
           loading={loading}
           goal={100}
-          goalLabel="Goal: 100% logged"
+          goalLabel={`${metrics?.winLossRate ?? '—'} of 100% goal`}
           goalPct={winLossPct}
           onClick={onDrill ? () => onDrill('Closed Opps (Win/Loss)', metrics?._uniqueClosedOpps, 'opps') : undefined}
         />

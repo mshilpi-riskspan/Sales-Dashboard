@@ -28,8 +28,14 @@ function formatPct(v) {
   return `${Math.round(v)}%`;
 }
 
+// This page is scoped to 4 tracked reps (see src/config/repGoals.js) — when "All" is
+// selected, sums are divided by this fixed count to produce a team-average-per-rep
+// value that's comparable against the same per-rep goal constants used everywhere else.
+const TRACKED_REP_COUNT = 4;
+
 export function computeMetrics(tasks, events, oppsQtr, oppsYtd, openOpps, repId = null) {
   const filterRep = (arr) => repId ? arr.filter((r) => r.OwnerId === repId) : arr;
+  const divisor = repId === null ? TRACKED_REP_COUNT : 1;
 
   const repTasks = filterRep(tasks || []);
   const repEvents = filterRep(events || []);
@@ -38,24 +44,26 @@ export function computeMetrics(tasks, events, oppsQtr, oppsYtd, openOpps, repId 
   const repOpenOpps = filterRep(openOpps || []);
 
   // Activity
-  const outboundEmails = repTasks.filter(
+  const outboundEmailsTotal = repTasks.filter(
     (t) => t.Type === 'Email' || t.Subject?.toLowerCase().includes('outreach')
   ).length;
+  const outboundEmails = outboundEmailsTotal / divisor;
   const outboundPerWeek = (outboundEmails / weeksElapsedThisQuarter()).toFixed(1);
 
   // All Events are calendar meetings in this org (Virtual_meeting, Face-to-Face Meeting, or untyped).
   // Tasks with Type='Call' are phone calls — excluded from meeting count.
-  const totalMeetings = repEvents.length;
+  const totalMeetingsTotal = repEvents.length;
+  const totalMeetings = totalMeetingsTotal / divisor;
   const meetingsPerMonth = (totalMeetings / monthsElapsedThisQuarter()).toFixed(1);
 
   // Pipeline Growth
   const newPipelineArr = repOppsQtr
     .filter((o) => !o.IsClosed)
-    .reduce((s, o) => s + arrOrAmount(o), 0);
+    .reduce((s, o) => s + arrOrAmount(o), 0) / divisor;
 
   // Fix: activePipeline = ALL open opps (not just those created this quarter)
   const activePipelineArr = repOpenOpps
-    .reduce((s, o) => s + arrOrAmount(o), 0);
+    .reduce((s, o) => s + arrOrAmount(o), 0) / divisor;
 
   // Deal Progression — restricted to core pipeline stages only
   const PIPELINE_STAGES = new Set([
@@ -64,7 +72,10 @@ export function computeMetrics(tasks, events, oppsQtr, oppsYtd, openOpps, repId 
   ]);
   const pipelineOpenOpps = repOpenOpps.filter((o) => PIPELINE_STAGES.has(o.StageName));
   const qtrOpenOpps = repOppsQtr.filter((o) => !o.IsClosed);
-  const technicalFitDeals = pipelineOpenOpps.filter((o) => o.StageName === 'Technical Fit Agreement').length;
+  const technicalFitDealsTotal = pipelineOpenOpps.filter((o) => o.StageName === 'Technical Fit Agreement').length;
+  const technicalFitDeals = divisor > 1
+    ? Math.round((technicalFitDealsTotal / divisor) * 10) / 10
+    : technicalFitDealsTotal;
 
   // Trial → Proposal: pipeline deals at Trial or later
   const laterStages = new Set(['Proposal (pricing) Delivered', 'Trial', 'Negotiation & Decision Making', 'Contract Sent for Signature']);
@@ -101,11 +112,11 @@ export function computeMetrics(tasks, events, oppsQtr, oppsYtd, openOpps, repId 
       const cd = new Date(o.CloseDate + 'T00:00:00');
       return cd >= qtrStart && cd <= qtrEnd;
     })
-    .reduce((s, o) => s + arrOrAmount(o), 0);
+    .reduce((s, o) => s + arrOrAmount(o), 0) / divisor;
 
   const arrYtd = repOppsYtd
     .filter((o) => o.IsWon)
-    .reduce((s, o) => s + arrOrAmount(o), 0);
+    .reduce((s, o) => s + arrOrAmount(o), 0) / divisor;
 
   const closedOpps = [...repOppsQtr, ...repOppsYtd].filter((o) => o.IsClosed);
   const uniqueClosed = Array.from(new Map(closedOpps.map((o) => [o.Id, o])).values());
@@ -132,6 +143,7 @@ export function computeMetrics(tasks, events, oppsQtr, oppsYtd, openOpps, repId 
     newPipelineArrRaw: newPipelineArr,
     activePipelineArrRaw: activePipelineArr,
     arrClosedQtrRaw: arrClosedQtr,
+    arrYtdRaw: arrYtd,
     trialToProposalRaw: trialToProposalRate,
     winLossRateRaw: winLossRate,
     stage2VelocityRaw,

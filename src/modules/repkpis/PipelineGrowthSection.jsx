@@ -17,7 +17,7 @@ export default function PipelineGrowthSection({ metrics, loading, onDrill }) {
           category="pipeline"
           loading={loading}
           goal={PIPELINE_GOAL}
-          goalLabel="Goal: ≥$500K/quarter"
+          goalLabel={`${metrics?.newPipelineArr ?? '$0'}/$500K this quarter`}
           goalPct={newPipelinePct}
           onClick={onDrill ? () => onDrill('New Pipeline This Quarter', metrics?._newPipelineOpps, 'opps') : undefined}
         />
@@ -27,7 +27,7 @@ export default function PipelineGrowthSection({ metrics, loading, onDrill }) {
           category="pipeline"
           loading={loading}
           goal={ACTIVE_COVERAGE_GOAL}
-          goalLabel="Goal: ≥$1.5M (4× quota)"
+          goalLabel={`${metrics?.activePipelineArr ?? '$0'}/$1.5M coverage`}
           goalPct={activePipelinePct}
           onClick={onDrill ? () => onDrill('Active Pipeline', metrics?._activePipelineOpps, 'opps') : undefined}
         />

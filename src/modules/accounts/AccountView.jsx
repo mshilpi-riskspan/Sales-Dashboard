@@ -8,6 +8,7 @@ import {
   fetchAccountActivities, fetchAccountOpportunities,
 } from '../../datasources/salesforce';
 import DealDetailPanel from '../../components/common/DealDetailPanel';
+import { isClientTier } from '../../config/accountTier';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -339,7 +340,7 @@ export default function AccountView({ accountId, onBack }) {
         : allActivities[0].StartDateTime?.slice(0, 10))
     : null;
 
-  const clientStatus = account?.AccountType_Tier__c?.toLowerCase().includes('client') ? 'Client' : 'Prospect';
+  const clientStatus = isClientTier(account?.AccountType_Tier__c) ? 'Client' : 'Prospect';
 
   return (
     // -m-6 bleeds outside PageShell's p-6 so the navy header extends edge-to-edge

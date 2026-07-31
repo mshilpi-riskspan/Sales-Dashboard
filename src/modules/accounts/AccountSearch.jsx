@@ -3,6 +3,7 @@ import { MagnifyingGlassIcon, ChevronDownIcon, ExclamationTriangleIcon, ClockIco
 import { useSalesforceQuery } from '../../hooks/useSalesforceQuery';
 import { useDashboard } from '../../context/DashboardContext';
 import { fetchAllAccounts, fetchOpenOpportunities } from '../../datasources/salesforce';
+import { isClientTier } from '../../config/accountTier';
 
 const RECENTLY_VIEWED_KEY = 'rs_recently_viewed_accounts';
 
@@ -278,7 +279,7 @@ export default function AccountSearch({ onSelect }) {
     }
     if (filterStatus !== 'all') {
       accounts = accounts.filter(a => {
-        const isClient = a.AccountType_Tier__c?.toLowerCase().includes('client');
+        const isClient = isClientTier(a.AccountType_Tier__c);
         return filterStatus === 'Client' ? isClient : !isClient;
       });
     }

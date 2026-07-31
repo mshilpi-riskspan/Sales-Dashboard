@@ -421,6 +421,32 @@ export async function fetchAllAccounts() {
   );
 }
 
+// Bulk Task+Event fetch across many accounts at once (fetchAccountActivities is
+// per-account and would mean one round-trip per account for a page like this).
+export async function fetchTargetedProspectActivities(accountIds) {
+  const cacheKey = 'targetedProspects:activities';
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+  if (!accountIds?.length) return { tasks: [], events: [] };
+
+  const ids = accountIds.map((id) => `'${id}'`).join(',');
+  const [tasks, events] = await Promise.all([
+    queryAll(
+      `SELECT Id, WhatId, Subject, Type, ActivityDate, OwnerId, Owner.Name, Description
+       FROM Task WHERE WhatId IN (${ids}) AND ActivityDate = LAST_N_DAYS:90
+       ORDER BY ActivityDate DESC`
+    ),
+    queryAll(
+      `SELECT Id, WhatId, Subject, Type, StartDateTime, OwnerId, Owner.Name, Description
+       FROM Event WHERE WhatId IN (${ids}) AND StartDateTime = LAST_N_DAYS:90
+       ORDER BY StartDateTime DESC`
+    ),
+  ]);
+  const result = { tasks, events };
+  cache.set(cacheKey, { data: result, timestamp: Date.now() });
+  return result;
+}
+
 export async function fetchAccountOpportunities(accountId) {
   const cacheKey = `account:opps:${accountId}`;
   const cached = cache.get(cacheKey);

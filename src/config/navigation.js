@@ -1,5 +1,6 @@
 import FirmGoals from '../modules/goals/FirmGoals';
 import AccountsPage from '../modules/accounts/AccountsPage';
+import TargetedProspects from '../modules/prospects/TargetedProspects';
 import PipelineByStage from '../modules/pipeline/PipelineByStage';
 import PipelineByMonth from '../modules/pipeline/PipelineByMonth';
 import WinLossAnalysis from '../modules/winloss/WinLossAnalysis';
@@ -21,6 +22,13 @@ export const NAV_ITEMS = [
     label: 'Accounts',
     icon: 'BuildingOffice2Icon',
     component: AccountsPage,
+    filters: ['salesperson'],
+  },
+  {
+    id: 'targeted-prospects',
+    label: 'Targeted Prospects',
+    icon: 'UserPlusIcon',
+    component: TargetedProspects,
     filters: ['salesperson'],
   },
   {

@@ -5,7 +5,7 @@ const ICON_MAP = { ChartBarIcon, UserGroupIcon, MegaphoneIcon, CalendarIcon, Cal
 
 const LOB_OPTIONS = [
   { value: 'all',           label: 'All' },
-  { value: 'Edge Platform', label: 'Edge Platform' },
+  { value: 'Edge Platform', label: 'RiskSpan Platform' },
   { value: 'Consulting',    label: 'Consulting' },
 ];
 

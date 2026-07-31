@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { format } from 'date-fns';
 import {
   ArrowLeftIcon, MapPinIcon, GlobeAltIcon,
 } from '@heroicons/react/24/outline';
@@ -85,19 +86,205 @@ function CadenceBar({ label, count, total }) {
   );
 }
 
-function ActivityItem({ item, type }) {
-  const subject = item.Subject || '(no subject)';
-  const date = type === 'task' ? item.ActivityDate : item.StartDateTime?.slice(0, 10);
-  const ownerName = item.Owner?.Name || '';
+// ── Rich activity feed (copied from DealDetailPanel per plan) ────────────────
+
+function parseActivityBody(description, type) {
+  if (!description) return { body: null, meta: null, isEmail: false };
+  const raw = description.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+  const isEmail = type === 'Email' || /^To:\s|Body:\s/.test(raw);
+  if (isEmail) {
+    const toMatch = raw.match(/^To:\s*([^\n]+?)(?:\s+CC:|$)/m);
+    const bodyMatch = raw.match(/Body:\s*([\s\S]*?)(?:\n(?:From:|Sent:|[-_]{10,})|\s*$)/);
+    let body = bodyMatch ? bodyMatch[1].trim() : null;
+    if (body) {
+      body = body.replace(/^External Email:.*?(?=\n\n|\n[A-Z]|[A-Z][a-z]{2,}\s+\/)/s, '').trim();
+      body = body.replace(/\n[-_]{3,}[\s\S]*/m, '').trim();
+    }
+    const to = toMatch ? toMatch[1].replace(/;/g, ' ·').trim() : null;
+    return { body: body || null, meta: { to }, isEmail: true };
+  }
+  const replyIdx = raw.search(/\n[-_]{10,}|\nFrom:\s[A-Z]/);
+  const body = replyIdx > 0 ? raw.slice(0, replyIdx).trim() : raw;
+  return { body, meta: null, isEmail: false };
+}
+
+const INTENT_META = {
+  Outreach:    { label: 'Outreach',   color: 'bg-amber-50 text-amber-700' },
+  Intro:       { label: 'Intro',      color: 'bg-blue-50 text-blue-600' },
+  'Follow-up': { label: 'Follow-up',  color: 'bg-orange-50 text-orange-600' },
+  Meeting:     { label: 'Meeting',    color: 'bg-green-50 text-green-700' },
+  Reply:       { label: 'Reply',      color: 'bg-rs-surface text-rs-muted' },
+};
+
+function getIntentTag(subject) {
+  if (!subject) return null;
+  const s = subject.toLowerCase();
+  if (/^re:/i.test(subject)) return 'Reply';
+  if (s.includes('outreach') || s.includes('reaching out')) return 'Outreach';
+  if (s.includes('intro') || s.includes('introduction')) return 'Intro';
+  if (s.includes('follow up') || s.includes('follow-up') || s.includes('followup') || s.includes('checking in')) return 'Follow-up';
+  if (s.includes('meeting') || s.includes('demo') || s.includes('sync') || s.includes('connect') || /\bcall\b/.test(s)) return 'Meeting';
+  return null;
+}
+
+function getBaseSubject(subject) {
+  if (!subject) return '';
+  return subject.replace(/^(re:|re:\s*re:|fw:|fwd:)\s*/gi, '').trim();
+}
+
+const TYPE_META = {
+  Email:           { label: 'Email',   color: 'bg-purple-50 text-purple-600' },
+  Call:            { label: 'Call',    color: 'bg-rs-teal/10 text-rs-teal' },
+  Meeting:         { label: 'Meeting', color: 'bg-green-50 text-green-700' },
+  Virtual_Meeting: { label: 'Virtual', color: 'bg-green-50 text-green-700' },
+  VIRTUAL_MEETING: { label: 'Virtual', color: 'bg-green-50 text-green-700' },
+  Task:            { label: 'Task',    color: 'bg-rs-surface text-rs-muted' },
+  Event:           { label: 'Event',   color: 'bg-orange-50 text-orange-600' },
+};
+
+function TypeBadge({ type }) {
+  const meta = TYPE_META[type] || { label: type?.slice(0, 8) || '—', color: 'bg-rs-surface text-rs-muted' };
   return (
-    <div className="flex gap-3 py-2.5 border-b border-rs-border/50 last:border-0">
-      <div className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${type === 'event' ? 'bg-rs-teal' : 'bg-slate-300'}`} />
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-rs-text truncate">{subject}</p>
-        <p className="text-[10px] text-rs-muted mt-0.5">{ownerName}{ownerName && ' · '}{relativeDate(date)}</p>
+    <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wide leading-none ${meta.color}`}>
+      {meta.label}
+    </span>
+  );
+}
+
+function RichActivityItem({ activity, compact = false, prevOwner = null }) {
+  const [expanded, setExpanded] = useState(false);
+  const date = activity.ActivityDate || activity.StartDateTime;
+  const type = activity.Type || (activity._type === 'event' ? 'Event' : 'Task');
+  const { body, meta, isEmail } = parseActivityBody(activity.Description, type);
+  const isLong = body && body.length > 160;
+  const intent = type === 'Email' ? getIntentTag(activity.Subject) : null;
+  const intentMeta = intent ? INTENT_META[intent] : null;
+  const ownerChanged = activity.Owner?.Name && activity.Owner.Name !== prevOwner;
+
+  if (compact) {
+    return (
+      <div className="py-2 border-b border-rs-border/30 last:border-0">
+        <p className="text-[10px] text-rs-muted mb-1">
+          {date ? format(new Date(date), 'MMM d, yyyy') : '—'}
+          {ownerChanged && activity.Owner?.Name ? ` · ${activity.Owner.Name}` : ''}
+        </p>
+        {isEmail && meta?.to && (
+          <p className="text-[10px] text-rs-muted mb-1 truncate"><span className="font-medium">To:</span> {meta.to}</p>
+        )}
+        {body ? (
+          <div className="bg-rs-surface rounded-md px-2.5 py-2">
+            <p className="text-[11px] text-rs-text leading-relaxed whitespace-pre-line">
+              {expanded || !isLong ? body : `${body.slice(0, 160)}…`}
+            </p>
+            {isLong && (
+              <button onClick={() => setExpanded(e => !e)} className="text-[10px] text-rs-teal hover:underline mt-1">
+                {expanded ? 'Show less' : 'Show more'}
+              </button>
+            )}
+          </div>
+        ) : <p className="text-[11px] text-rs-muted italic">No content</p>}
       </div>
+    );
+  }
+
+  return (
+    <div className="py-2.5 border-b border-rs-border/50 last:border-0">
+      <div className="flex items-start justify-between gap-2 mb-0.5">
+        <p className="text-xs font-medium text-rs-text leading-snug flex-1 min-w-0">{activity.Subject || '—'}</p>
+        <div className="flex items-center gap-1 shrink-0">
+          <TypeBadge type={type} />
+          {intentMeta && (
+            <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wide leading-none ${intentMeta.color}`}>
+              {intentMeta.label}
+            </span>
+          )}
+        </div>
+      </div>
+      <p className="text-[10px] text-rs-muted mb-1.5">
+        {date ? format(new Date(date), 'MMM d, yyyy') : '—'}
+        {activity.Owner?.Name ? ` · ${activity.Owner.Name}` : ''}
+      </p>
+      {isEmail && meta?.to && (
+        <p className="text-[10px] text-rs-muted mb-1 truncate"><span className="font-medium">To:</span> {meta.to}</p>
+      )}
+      {body && (
+        <div className={isEmail ? 'bg-rs-surface rounded-md px-2.5 py-2 mt-1' : ''}>
+          <p className="text-[11px] text-rs-text leading-relaxed whitespace-pre-line">
+            {expanded || !isLong ? body : `${body.slice(0, 160)}…`}
+          </p>
+          {isLong && (
+            <button onClick={() => setExpanded(e => !e)} className="text-[10px] text-rs-teal hover:underline mt-1">
+              {expanded ? 'Show less' : 'Show more'}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function ActivityThread({ emails }) {
+  const [open, setOpen] = useState(false);
+  const first = emails[0];
+  const last = emails[emails.length - 1];
+  const baseSubject = getBaseSubject(first.Subject);
+  const earliest = new Date(first.ActivityDate || first.CreatedDate || 0);
+  const latest = new Date(last.ActivityDate || last.CreatedDate || 0);
+  const sameDay = earliest.toDateString() === latest.toDateString();
+  const dateRange = sameDay
+    ? format(latest, 'MMM d, yyyy')
+    : `${format(earliest, 'MMM d')} – ${format(latest, 'MMM d, yyyy')}`;
+
+  return (
+    <div className="border-b border-rs-border/50 last:border-0">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full text-left py-2.5 flex items-start gap-2 hover:bg-rs-surface/50 rounded transition-colors"
+      >
+        <span className="text-rs-muted text-[10px] mt-0.5 shrink-0">{open ? '▼' : '▶'}</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+            <p className="text-xs font-medium text-rs-text leading-snug">{baseSubject || first.Subject || '—'}</p>
+            <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-semibold leading-none uppercase tracking-wide">
+              {emails.length} emails
+            </span>
+          </div>
+          <p className="text-[10px] text-rs-muted">{dateRange}</p>
+        </div>
+      </button>
+      {open && (
+        <div className="pl-4 pb-2">
+          {emails.map((e, i) => (
+            <RichActivityItem key={e.Id || i} activity={e} compact prevOwner={i > 0 ? emails[i - 1].Owner?.Name : null} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function groupActivities(activities) {
+  const emailGroups = new Map();
+  const standalone = [];
+  for (const a of activities) {
+    if (a.Type === 'Email') {
+      const base = getBaseSubject(a.Subject).toLowerCase();
+      if (!emailGroups.has(base)) emailGroups.set(base, []);
+      emailGroups.get(base).push(a);
+    } else {
+      standalone.push({ type: 'single', item: a, date: new Date(a.ActivityDate || a.StartDateTime || a.CreatedDate || 0) });
+    }
+  }
+  const threads = [];
+  for (const [, emails] of emailGroups) {
+    emails.sort((a, b) => new Date(a.ActivityDate || a.CreatedDate || 0) - new Date(b.ActivityDate || b.CreatedDate || 0));
+    threads.push({
+      type: emails.length > 1 ? 'thread' : 'single',
+      item: emails.length > 1 ? emails : emails[0],
+      date: new Date(emails[emails.length - 1].ActivityDate || emails[emails.length - 1].CreatedDate || 0),
+    });
+  }
+  return [...threads, ...standalone].sort((a, b) => b.date - a.date);
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
@@ -319,39 +506,33 @@ export default function AccountView({ accountId, onBack }) {
           <SectionLabel>Key Contacts</SectionLabel>
           {loading ? (
             <div className="space-y-2">
-              {[1, 2, 3].map(i => <Skeleton key={i} className="h-10 w-full" />)}
+              {[1, 2].map(i => <Skeleton key={i} className="h-12 w-full" />)}
             </div>
           ) : (contacts || []).length === 0 ? (
             <p className="text-xs text-rs-muted">No contacts found in Salesforce for this account.</p>
           ) : (
-            <div className="border border-rs-border rounded-lg overflow-hidden">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {contacts.map(c => {
                 const name = [c.FirstName, c.LastName].filter(Boolean).join(' ') || '—';
-                const initials = ((c.FirstName?.[0] || '') + (c.LastName?.[0] || '')).toUpperCase() || '?';
-                const lastActive = c.LastActivityDate ? relativeDate(c.LastActivityDate) : null;
+                const initials = [c.FirstName?.[0], c.LastName?.[0]].filter(Boolean).join('').toUpperCase();
                 return (
-                  <div key={c.Id} className="flex items-start gap-3 px-3 py-2.5 border-b border-rs-border/50 last:border-0">
-                    <div className="shrink-0 w-7 h-7 rounded-full bg-rs-teal/15 text-rs-teal flex items-center justify-center text-[11px] font-semibold">
-                      {initials}
+                  <div key={c.Id} className="flex items-center gap-3 p-2.5 rounded-lg bg-rs-surface/50 border border-rs-border/30">
+                    <div className="w-8 h-8 rounded-full bg-rs-navy flex items-center justify-center text-white text-xs font-semibold shrink-0">
+                      {initials || '?'}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-xs font-medium text-rs-text leading-tight">{name}</p>
-                        {lastActive && <span className="text-[10px] text-rs-muted shrink-0">{lastActive}</span>}
-                      </div>
-                      {c.Title && <p className="text-[10px] text-rs-muted mt-0.5 leading-snug">{c.Title}</p>}
-                      <div className="flex items-center gap-3 mt-0.5 flex-wrap">
-                        {c.Email && (
-                          <a href={`mailto:${c.Email}`} className="text-[10px] text-rs-teal hover:underline truncate">
-                            {c.Email}
-                          </a>
-                        )}
-                        {c.Phone && (
-                          <a href={`tel:${c.Phone}`} className="text-[10px] text-rs-muted hover:text-rs-teal hover:underline shrink-0 transition-colors">
-                            {c.Phone}
-                          </a>
-                        )}
-                      </div>
+                      <p className="text-xs font-medium text-rs-text">{name}</p>
+                      {c.Title && <p className="text-[10px] text-rs-muted truncate">{c.Title}</p>}
+                      {c.Email && (
+                        <a href={`mailto:${c.Email}`} className="text-[10px] text-rs-teal hover:underline block truncate">
+                          {c.Email}
+                        </a>
+                      )}
+                      {c.Phone && (
+                        <a href={`tel:${c.Phone}`} className="text-[10px] text-rs-muted hover:text-rs-teal hover:underline block truncate transition-colors">
+                          {c.Phone}
+                        </a>
+                      )}
                     </div>
                   </div>
                 );
@@ -382,11 +563,12 @@ export default function AccountView({ accountId, onBack }) {
                 <p className="text-xs text-rs-muted">No activity recorded this year.</p>
               ) : (
                 <div>
-                  {allActivities.slice(0, 20).map((item, i) => (
-                    <ActivityItem key={item.Id || i} item={item} type={item._type} />
-                  ))}
-                  {allActivities.length > 20 && (
-                    <p className="text-xs text-rs-muted mt-2">{allActivities.length - 20} more activities not shown</p>
+                  {groupActivities(allActivities).map((entry, i) =>
+                    entry.type === 'thread' ? (
+                      <ActivityThread key={i} emails={entry.item} />
+                    ) : (
+                      <RichActivityItem key={entry.item?.Id || i} activity={entry.item} />
+                    )
                   )}
                 </div>
               )}

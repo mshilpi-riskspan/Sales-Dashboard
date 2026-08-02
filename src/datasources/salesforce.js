@@ -76,8 +76,21 @@ async function login() {
   }
 }
 
+// Many components fire parallel queries on mount — without de-duping, a session
+// expiry triggers a stampede of concurrent login() calls that race to overwrite
+// the shared sessionId/instanceUrl (and can trip Salesforce's concurrent-session
+// handling), leaving some in-flight requests holding a token that's already been
+// superseded. All concurrent callers instead await the same in-flight login.
+let loginPromise = null;
+
 async function getSession() {
-  if (!sessionId) await login();
+  if (sessionId) return { sessionId, instanceUrl };
+  if (!loginPromise) {
+    loginPromise = login().finally(() => {
+      loginPromise = null;
+    });
+  }
+  await loginPromise;
   return { sessionId, instanceUrl };
 }
 

@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import https from 'https';
 import http from 'http';
+import { snowflakeQuery } from './functions/_lib/snowflake.js';
 
 // Stores instance URL after SOAP login — set via POST /sf-instance-url from the app
 let sfInstanceUrl = null;
@@ -63,6 +64,19 @@ export default defineConfig(({ mode }) => {
               res.end(e.message);
             });
             req.pipe(proxyReq);
+          });
+
+          // Local mirror of functions/api/snowflake/test.js — same shared
+          // connector, so dev and prod behave identically.
+          server.middlewares.use('/api/snowflake/test', async (req, res) => {
+            try {
+              const result = await snowflakeQuery(env, 'SELECT 1 AS OK');
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
           });
         },
       },

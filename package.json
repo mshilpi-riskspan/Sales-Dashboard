@@ -12,6 +12,7 @@
   "dependencies": {
     "@heroicons/react": "^2.2.0",
     "date-fns": "^4.4.0",
+    "jose": "^6.2.7",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "recharts": "^3.9.0"

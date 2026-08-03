@@ -107,6 +107,9 @@ export async function snowflakeQuery(env, sql) {
         Authorization: `Bearer ${jwt}`,
         'X-Snowflake-Authorization-Token-Type': 'KEYPAIR_JWT',
         Accept: 'application/json',
+        // Cloudflare Workers' fetch() sends no User-Agent by default; Snowflake's
+        // SQL API rejects requests with a null/empty one.
+        'User-Agent': 'monitor-for-stephen/1.0',
       },
       body: JSON.stringify({
         statement: sql,

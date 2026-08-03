@@ -50,9 +50,12 @@ async function computePublicKeyFingerprint(pem) {
   return `SHA256:${bufferToBase64(digest)}`;
 }
 
+// SNOWFLAKE_ROLE is intentionally not required — the Snowflake SQL API falls
+// back to the user's default role when it's omitted. If you rely on that
+// fallback, make sure the default role itself is SELECT-only in Snowflake.
 const REQUIRED_ENV_VARS = [
   'SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER', 'SNOWFLAKE_PRIVATE_KEY',
-  'SNOWFLAKE_DATABASE', 'SNOWFLAKE_SCHEMA', 'SNOWFLAKE_WAREHOUSE', 'SNOWFLAKE_ROLE',
+  'SNOWFLAKE_DATABASE', 'SNOWFLAKE_SCHEMA', 'SNOWFLAKE_WAREHOUSE',
 ];
 
 function assertConfigured(env) {
@@ -111,7 +114,7 @@ export async function snowflakeQuery(env, sql) {
         warehouse: env.SNOWFLAKE_WAREHOUSE,
         database: env.SNOWFLAKE_DATABASE,
         schema: env.SNOWFLAKE_SCHEMA,
-        role: env.SNOWFLAKE_ROLE,
+        ...(env.SNOWFLAKE_ROLE ? { role: env.SNOWFLAKE_ROLE } : {}),
         timeout: 30,
       }),
     }

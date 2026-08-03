@@ -50,13 +50,12 @@ async function computePublicKeyFingerprint(pem) {
   return `SHA256:${bufferToBase64(digest)}`;
 }
 
-// SNOWFLAKE_ROLE is intentionally not required — the Snowflake SQL API falls
-// back to the user's default role when it's omitted. If you rely on that
-// fallback, make sure the default role itself is SELECT-only in Snowflake.
-const REQUIRED_ENV_VARS = [
-  'SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER', 'SNOWFLAKE_PRIVATE_KEY',
-  'SNOWFLAKE_DATABASE', 'SNOWFLAKE_SCHEMA', 'SNOWFLAKE_WAREHOUSE',
-];
+// SNOWFLAKE_ROLE/DATABASE/SCHEMA/WAREHOUSE are all intentionally optional —
+// the Snowflake SQL API falls back to whatever defaults are set on the user
+// (default role/warehouse/namespace) when they're omitted from the request.
+// Only the connection identity itself is strictly required. If you rely on
+// the role fallback, make sure the default role is SELECT-only in Snowflake.
+const REQUIRED_ENV_VARS = ['SNOWFLAKE_ACCOUNT', 'SNOWFLAKE_USER', 'SNOWFLAKE_PRIVATE_KEY'];
 
 function assertConfigured(env) {
   const missing = REQUIRED_ENV_VARS.filter((k) => !env[k]);
@@ -111,9 +110,9 @@ export async function snowflakeQuery(env, sql) {
       },
       body: JSON.stringify({
         statement: sql,
-        warehouse: env.SNOWFLAKE_WAREHOUSE,
-        database: env.SNOWFLAKE_DATABASE,
-        schema: env.SNOWFLAKE_SCHEMA,
+        ...(env.SNOWFLAKE_WAREHOUSE ? { warehouse: env.SNOWFLAKE_WAREHOUSE } : {}),
+        ...(env.SNOWFLAKE_DATABASE ? { database: env.SNOWFLAKE_DATABASE } : {}),
+        ...(env.SNOWFLAKE_SCHEMA ? { schema: env.SNOWFLAKE_SCHEMA } : {}),
         ...(env.SNOWFLAKE_ROLE ? { role: env.SNOWFLAKE_ROLE } : {}),
         timeout: 30,
       }),

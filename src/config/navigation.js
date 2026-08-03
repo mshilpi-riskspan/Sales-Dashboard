@@ -8,6 +8,7 @@ import ClosedWonByType from '../modules/winloss/ClosedWonByType';
 import CalendarPage from '../modules/calendar/CalendarPage';
 import RepKPIs from '../modules/repkpis/RepKPIs';
 import CampaignsPage from '../modules/campaigns/CampaignsPage';
+import AccountMapping from '../modules/settings/AccountMapping';
 
 export const NAV_ITEMS = [
   {
@@ -79,5 +80,12 @@ export const NAV_ITEMS = [
     icon: 'CurrencyDollarIcon',
     component: ClosedWonByType,
     filters: ['salesperson'],
+  },
+  {
+    id: 'account-mapping',
+    label: 'Account Mapping',
+    icon: 'ArrowsRightLeftIcon',
+    component: AccountMapping,
+    filters: [],
   },
 ];

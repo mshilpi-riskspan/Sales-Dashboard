@@ -78,6 +78,25 @@ export default defineConfig(({ mode }) => {
               res.end(JSON.stringify({ error: err.message }));
             }
           });
+
+          // Local mirror of functions/api/snowflake/clients.js
+          server.middlewares.use('/api/snowflake/clients', async (req, res) => {
+            try {
+              const result = await snowflakeQuery(
+                env,
+                `SELECT CLIENT_ID, CLIENT_NAME, DISPLAY_NAME, SALESFORCE_ACCOUNT_ID,
+                        SNOWFLAKE_CLIENT_IDENTIFIER, CONTRACT_TIER, IS_ACTIVE,
+                        IMPLIED_IS_ACTIVE, INDUSTRY, SEGMENT, SALES_LEAD
+                 FROM DIM_CLIENT
+                 ORDER BY COALESCE(DISPLAY_NAME, CLIENT_NAME)`
+              );
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
         },
       },
     ],

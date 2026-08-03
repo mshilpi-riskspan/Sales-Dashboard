@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react';
 import https from 'https';
 import http from 'http';
 import { snowflakeQuery } from './functions/_lib/snowflake.js';
+import { fetchAccountUsage } from './functions/_lib/accountUsage.js';
 
 // Stores instance URL after SOAP login — set via POST /sf-instance-url from the app
 let sfInstanceUrl = null;
@@ -94,6 +95,21 @@ export default defineConfig(({ mode }) => {
               res.end(JSON.stringify(result));
             } catch (err) {
               res.writeHead(500, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+
+          // Local mirror of functions/api/snowflake/account-usage.js
+          server.middlewares.use('/api/snowflake/account-usage', async (req, res) => {
+            const { searchParams } = new URL(req.url, 'http://localhost');
+            const clientId = searchParams.get('clientId') || undefined;
+            const accountId = searchParams.get('accountId') || undefined;
+            try {
+              const result = await fetchAccountUsage(env, { clientId, accountId });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({ error: err.message }));
             }
           });

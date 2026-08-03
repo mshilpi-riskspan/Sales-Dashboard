@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 import {
   ArrowLeftIcon, MapPinIcon, GlobeAltIcon,
 } from '@heroicons/react/24/outline';
@@ -7,6 +8,8 @@ import {
   fetchAccountDetail, fetchAccountContacts,
   fetchAccountActivities, fetchAccountOpportunities,
 } from '../../datasources/salesforce';
+import { fetchAccountUsage } from '../../datasources/snowflake';
+import { findConfirmedClientId } from '../../lib/accountMapping';
 import DealDetailPanel from '../../components/common/DealDetailPanel';
 import { isClientTier } from '../../config/accountTier';
 
@@ -59,6 +62,267 @@ function StageBadge({ stage }) {
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STAGE_COLORS[stage] || 'bg-slate-100 text-slate-600'}`}>
       {stage}
     </span>
+  );
+}
+
+// ── Snowflake product usage (per-account, from functions/api/snowflake/account-usage.js) ──
+
+function formatNum(v) {
+  if (v === null || v === undefined) return '—';
+  return Math.round(v).toLocaleString();
+}
+
+function formatMoney(v) {
+  if (v === null || v === undefined) return '—';
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
+  return `$${Math.round(v)}`;
+}
+
+function formatHours(v) {
+  if (v === null || v === undefined) return '—';
+  return `${Math.round(v)}h`;
+}
+
+function pctDelta(current, prev) {
+  if (current === null || prev === null || prev === undefined) return null;
+  if (prev === 0) return current > 0 ? '+100%' : null;
+  const pct = Math.round(((current - prev) / prev) * 100);
+  return `${pct >= 0 ? '+' : ''}${pct}%`;
+}
+
+const HEALTH_STYLES = {
+  GREEN: 'bg-green-100 text-green-700',
+  YELLOW: 'bg-amber-100 text-amber-700',
+  RED: 'bg-red-100 text-red-600',
+};
+
+function StatTile({ label, value, delta, unavailable }) {
+  return (
+    <div className="bg-rs-surface/60 border border-rs-border/50 rounded-lg px-3 py-2">
+      <p className="text-[10px] text-rs-muted mb-0.5">{label}</p>
+      {unavailable ? (
+        <p className="text-xs text-rs-muted italic">Unavailable</p>
+      ) : (
+        <p className="text-sm font-semibold text-rs-text">
+          {value}
+          {delta && <span className="ml-1.5 text-[10px] font-medium text-rs-muted">{delta} vs prior 30d</span>}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function UsageSection({ usageLoading, usage }) {
+  if (usageLoading) {
+    return (
+      <div className="grid grid-cols-3 gap-3">
+        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+      </div>
+    );
+  }
+
+  if (!usage?.mapped) {
+    return (
+      <div className="bg-rs-surface border border-dashed border-rs-border rounded-lg p-6 text-center">
+        <p className="text-xs text-rs-muted">No Snowflake usage data mapped for this account — check Account Mapping</p>
+      </div>
+    );
+  }
+
+  const failures = usage.failures || [];
+  const health = usage.health;
+  const riskFactors = Array.isArray(health?.KEY_RISK_FACTORS) ? health.KEY_RISK_FACTORS : [];
+  const usageMetrics = usage.usage;
+  const commercial = usage.commercial;
+  const support = usage.support;
+  const contracts = usage.contracts || [];
+  const trend = (usage.usageTrend || []).map((w) => ({
+    week: w.WEEK ? format(new Date(w.WEEK + 'T00:00:00'), 'MMM d') : '',
+    queries: w.QUERIES || 0,
+    forecasts: w.FORECASTS || 0,
+  }));
+  const servers = usage.usageByServer || [];
+  const distinctUsers = usage.distinctUsers;
+
+  return (
+    <div className="space-y-4">
+      {health && (
+        <div>
+          <div className="flex items-center gap-2 mb-1.5">
+            <span className={`px-2 py-0.5 rounded text-xs font-semibold ${HEALTH_STYLES[health.HEALTH_STATUS] || 'bg-slate-100 text-slate-600'}`}>
+              {health.HEALTH_STATUS || 'Unknown'}
+            </span>
+            <span className="text-sm font-semibold text-rs-text">
+              {health.OVERALL_HEALTH_SCORE != null ? `${health.OVERALL_HEALTH_SCORE} / 100 health score` : 'No health score recorded'}
+            </span>
+          </div>
+          {riskFactors.length > 0 && (
+            <ul className="text-[11px] text-amber-700 list-disc list-inside space-y-0.5 mb-2">
+              {riskFactors.map((f, i) => <li key={i}>{f}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-rs-muted mb-1.5">Usage (30 days)</p>
+        <div className="grid grid-cols-4 gap-3 mb-2">
+          <StatTile
+            label="API Calls"
+            value={formatNum(usageMetrics?.API_CALLS_30D)}
+            delta={pctDelta(usageMetrics?.API_CALLS_30D, usageMetrics?.API_CALLS_PREV_30D)}
+            unavailable={failures.includes('usage')}
+          />
+          <StatTile
+            label="Forecast Runs"
+            value={formatNum(usageMetrics?.FORECASTS_30D)}
+            delta={pctDelta(usageMetrics?.FORECASTS_30D, usageMetrics?.FORECASTS_PREV_30D)}
+            unavailable={failures.includes('usage')}
+          />
+          <StatTile
+            label="Model Executions"
+            value={formatNum(usageMetrics?.MODEL_EXECUTIONS_30D)}
+            unavailable={failures.includes('usage')}
+          />
+          <StatTile
+            label="Model Failures"
+            value={formatNum(usageMetrics?.MODEL_FAILURES_30D)}
+            unavailable={failures.includes('usage')}
+          />
+          <StatTile
+            label="Scenario Runs"
+            value={formatNum(usageMetrics?.SCENARIO_RUNS_30D)}
+            unavailable={failures.includes('usage')}
+          />
+          <StatTile
+            label="Stress Tests"
+            value={formatNum(usageMetrics?.STRESS_TESTS_30D)}
+            unavailable={failures.includes('usage')}
+          />
+          <StatTile
+            label="Premium Feature Usage"
+            value={formatNum(usageMetrics?.PREMIUM_FEATURE_USAGE_30D)}
+            unavailable={failures.includes('usage')}
+          />
+          <StatTile
+            label="Overrides"
+            value={formatNum(usageMetrics?.OVERRIDES_30D)}
+            unavailable={failures.includes('usage')}
+          />
+          <StatTile
+            label="Forecast Loans"
+            value={formatNum(usageMetrics?.FORECAST_LOANS_30D)}
+            unavailable={failures.includes('usage')}
+          />
+          <StatTile
+            label="Forecast Securities"
+            value={formatNum(usageMetrics?.FORECAST_SECURITIES_30D)}
+            unavailable={failures.includes('usage')}
+          />
+          <StatTile
+            label="Avg API Latency"
+            value={usageMetrics?.AVG_LATENCY_MS_30D != null ? `${Math.round(usageMetrics.AVG_LATENCY_MS_30D)}ms` : '—'}
+            unavailable={failures.includes('usage')}
+          />
+          <StatTile
+            label="Distinct Users"
+            value={formatNum(distinctUsers?.DISTINCT_USERS)}
+            unavailable={failures.includes('distinctUsers')}
+          />
+        </div>
+
+        {(distinctUsers?.USER_RUNS || distinctUsers?.SYSTEM_RUNS) ? (
+          <p className="text-[11px] text-rs-muted mb-2">
+            {formatNum(distinctUsers.USER_DISTINCT_USERS)} end user{distinctUsers.USER_DISTINCT_USERS === 1 ? '' : 's'} ({formatNum(distinctUsers.USER_RUNS)} runs) ·{' '}
+            {formatNum(distinctUsers.SYSTEM_DISTINCT_USERS)} system/admin/batch account{distinctUsers.SYSTEM_DISTINCT_USERS === 1 ? '' : 's'} ({formatNum(distinctUsers.SYSTEM_RUNS)} runs)
+          </p>
+        ) : null}
+
+        {trend.length > 0 && (
+          <div className="mb-2">
+            <p className="text-[10px] text-rs-muted mb-1">Weekly usage, last 90 days</p>
+            <ResponsiveContainer width="100%" height={120}>
+              <LineChart data={trend} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+                <XAxis dataKey="week" tick={{ fontSize: 10, fill: '#858C9C' }} axisLine={false} tickLine={false} />
+                <YAxis hide />
+                <Tooltip
+                  contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #DADEE5' }}
+                  formatter={(v, name) => [v, name === 'queries' ? 'API Calls' : 'Forecast Runs']}
+                />
+                <Line type="monotone" dataKey="queries" stroke="#0C8EA3" strokeWidth={2} dot={false} name="queries" />
+                <Line type="monotone" dataKey="forecasts" stroke="#FFA91D" strokeWidth={2} dot={false} name="forecasts" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+
+        {servers.length > 0 && (
+          <div>
+            <p className="text-[10px] text-rs-muted mb-1">Forecast runs by server (30 days)</p>
+            <div className="flex flex-wrap gap-2">
+              {servers.map((s) => (
+                <span key={s.SERVER_NAME} className="text-[11px] bg-rs-surface border border-rs-border/50 rounded-full px-2 py-0.5">
+                  {s.SERVER_NAME}: <span className="font-semibold text-rs-text">{formatNum(s.RUN_COUNT)}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-rs-muted mb-1.5">Support</p>
+        <div className="grid grid-cols-4 gap-3">
+          <StatTile label="Open Tickets" value={formatNum(support?.OPEN_TICKETS)} unavailable={failures.includes('support')} />
+          <StatTile label="New Tickets" value={formatNum(support?.NEW_TICKETS)} unavailable={failures.includes('support')} />
+          <StatTile label="Resolved" value={formatNum(support?.RESOLVED_TICKETS)} unavailable={failures.includes('support')} />
+          <StatTile label="Reopened" value={formatNum(support?.REOPENED_TICKETS)} unavailable={failures.includes('support')} />
+          <StatTile label="Escalated" value={formatNum(support?.ESCALATED_TICKETS)} unavailable={failures.includes('support')} />
+          <StatTile label="Critical" value={formatNum(support?.CRITICAL_TICKETS)} unavailable={failures.includes('support')} />
+          <StatTile label="High Priority" value={formatNum(support?.HIGH_PRIORITY_TICKETS)} unavailable={failures.includes('support')} />
+          <StatTile label="Avg First Response" value={formatHours(support?.AVG_FIRST_RESPONSE_HOURS)} unavailable={failures.includes('support')} />
+        </div>
+      </div>
+
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-rs-muted mb-1.5">Billing (Maxio) — separate from Salesforce ARR above</p>
+        <div className="grid grid-cols-4 gap-3 mb-2">
+          <StatTile label="ARR" value={formatMoney(commercial?.ARR)} unavailable={failures.includes('commercial')} />
+          <StatTile label="MRR" value={formatMoney(commercial?.MRR)} unavailable={failures.includes('commercial')} />
+          <StatTile label="Contract Value" value={formatMoney(commercial?.CONTRACT_VALUE)} unavailable={failures.includes('commercial')} />
+          <StatTile label="Days to Renewal" value={formatNum(commercial?.DAYS_TO_RENEWAL)} unavailable={failures.includes('commercial')} />
+          <StatTile label="Active Contracts" value={formatNum(commercial?.ACTIVE_CONTRACTS)} unavailable={failures.includes('commercial')} />
+          <StatTile label="Open Invoices" value={formatNum(commercial?.OPEN_INVOICE_COUNT)} unavailable={failures.includes('commercial')} />
+          <StatTile label="Expansion Opps" value={formatNum(commercial?.EXPANSION_OPPORTUNITIES)} unavailable={failures.includes('commercial')} />
+          <StatTile label="Expansion Pipeline" value={formatMoney(commercial?.EXPANSION_PIPELINE_VALUE)} unavailable={failures.includes('commercial')} />
+        </div>
+        {contracts.length > 0 && (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr>
+                  {['Contract #', 'Start', 'End', 'Value', 'Active'].map((h) => (
+                    <th key={h} className="text-left text-[10px] font-semibold text-rs-muted uppercase tracking-wide pb-1">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {contracts.map((c, i) => (
+                  <tr key={i} className="border-t border-rs-border/50">
+                    <td className="py-1 text-rs-text">{c.CONTRACT_NUMBER || '—'}</td>
+                    <td className="py-1 text-rs-muted">{c.EARLIEST_START_DATE || '—'}</td>
+                    <td className="py-1 text-rs-muted">{c.LATEST_END_DATE || '—'}</td>
+                    <td className="py-1 text-rs-text">{formatMoney(c.TOTAL_CONTRACT_VALUE)}</td>
+                    <td className="py-1 text-rs-muted">{c.IS_ACTIVE ? 'Yes' : 'No'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -297,6 +561,8 @@ export default function AccountView({ accountId, onBack }) {
   const [opps, setOpps] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeDeal, setActiveDeal] = useState(null);
+  const [usage, setUsage] = useState(null);
+  const [usageLoading, setUsageLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
@@ -316,6 +582,18 @@ export default function AccountView({ accountId, onBack }) {
       setOpps(oppsData);
       setLoading(false);
     });
+  }, [accountId]);
+
+  // Independent of the Salesforce fetch above — a Snowflake hiccup should
+  // never block the rest of the page from rendering.
+  useEffect(() => {
+    setUsageLoading(true);
+    setUsage(null);
+    const clientId = findConfirmedClientId(accountId);
+    fetchAccountUsage(clientId ? { clientId } : { accountId })
+      .then(setUsage)
+      .catch(() => setUsage({ clientId: null, mapped: false, failures: [] }))
+      .finally(() => setUsageLoading(false));
   }, [accountId]);
 
   const cadence = computeCadence(activities);
@@ -577,13 +855,10 @@ export default function AccountView({ accountId, onBack }) {
           )}
         </section>
 
-        {/* Usage Placeholder */}
+        {/* Product Usage & Health (Snowflake) */}
         <section>
-          <SectionLabel>Product Usage</SectionLabel>
-          {/* TODO: wire Snowflake usage data */}
-          <div className="bg-rs-surface border border-dashed border-rs-border rounded-lg p-6 text-center">
-            <p className="text-xs text-rs-muted">Product usage data — coming soon (Snowflake integration)</p>
-          </div>
+          <SectionLabel>Product Usage &amp; Health (Snowflake)</SectionLabel>
+          <UsageSection usageLoading={usageLoading} usage={usage} />
         </section>
       </div>
 

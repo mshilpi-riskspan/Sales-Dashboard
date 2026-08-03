@@ -20,3 +20,16 @@ export async function fetchSnowflakeClients() {
     return obj;
   });
 }
+
+// { accountId } or { clientId } — pass whichever is already known. The
+// server resolves CLIENT_ID from accountId itself via DIM_CLIENT when a
+// clientId isn't already in hand (e.g. from a confirmed manual mapping).
+export async function fetchAccountUsage({ accountId, clientId } = {}) {
+  const params = clientId
+    ? `clientId=${encodeURIComponent(clientId)}`
+    : `accountId=${encodeURIComponent(accountId)}`;
+  const res = await fetch(`/api/snowflake/account-usage?${params}`);
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error || 'Snowflake query failed');
+  return json;
+}

@@ -50,6 +50,46 @@ function parseMeetingNotes(description) {
   return raw.replace(/\n[-_]{3,}[\s\S]*/m, '').trim() || null;
 }
 
+const CATEGORY_STYLES = {
+  Renewal:    'bg-red-50 text-red-700 border-red-200',
+  QBR:        'bg-purple-50 text-purple-700 border-purple-200',
+  Demo:       'bg-rs-teal/10 text-rs-teal border-rs-teal/20',
+  Trial:      'bg-amber-50 text-amber-700 border-amber-200',
+  Kickoff:    'bg-green-50 text-green-700 border-green-200',
+  'Check-in': 'bg-blue-50 text-blue-700 border-blue-200',
+  Internal:   'bg-rs-surface text-rs-muted border-rs-border',
+  Other:      'bg-white text-rs-muted border-rs-border',
+};
+
+function categoryStyle(category) {
+  return CATEGORY_STYLES[category] || CATEGORY_STYLES.Other;
+}
+
+// Purely text-based classification off Subject + notes — no Account/Opportunity
+// cross-reference (Event↔Account/Opportunity matching in this org is fuzzy
+// name-matching only, no reliable ID join).
+function classifyMeeting(event) {
+  const notes = parseMeetingNotes(event.Description) || '';
+  const text = `${event.Subject || ''} ${notes}`.toLowerCase();
+  const company = extractCompanyName(event);
+
+  let category = 'Other';
+  if (/renewal|renew\b/.test(text)) category = 'Renewal';
+  else if (/\bqbr\b|quarterly business review/.test(text)) category = 'QBR';
+  else if (/\bdemo\b/.test(text)) category = 'Demo';
+  else if (/\btrial\b/.test(text)) category = 'Trial';
+  else if (/kick[\s-]?off/.test(text)) category = 'Kickoff';
+  else if (/check[\s-]?in|\bsync\b|touch\s?base/.test(text)) category = 'Check-in';
+  else if (!company) category = 'Internal';
+
+  // Only external (client/prospect) meetings count as "notable" — an internal
+  // catch-up whose notes happen to mention e.g. a client's contract shouldn't
+  // crowd out real client-facing renewal/negotiation meetings.
+  const isNotable = category !== 'Internal' && /renewal|negotiat|contract|escalat|at[\s-]?risk|churn/.test(text);
+
+  return { company, category, isNotable };
+}
+
 function formatDuration(start, end) {
   if (!start || !end) return null;
   const mins = differenceInMinutes(new Date(end), new Date(start));
@@ -132,45 +172,11 @@ function EventDetail({ event, onBack }) {
 
 // ── Calendar grid ─────────────────────────────────────────────────────────────
 
-function CalendarGrid({ events, weekStart, onEventClick }) {
+function CalendarGrid({ weekEvents, weekStart, onEventClick }) {
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
-  const weekEnd = addDays(weekStart, 7);
-
-  const weekEvents = useMemo(() => {
-    return events.filter((e) => {
-      const d = e.StartDateTime ? new Date(e.StartDateTime) : null;
-      return d && d >= weekStart && d < weekEnd;
-    });
-  }, [events, weekStart]);
-
-  const companies = useMemo(() => {
-    const names = weekEvents.map(extractCompanyName).filter(Boolean);
-    return [...new Set(names)];
-  }, [weekEvents]);
 
   return (
     <div>
-      {/* Companies summary strip */}
-      <div className="mb-4 px-4 py-2.5 bg-rs-surface rounded-lg flex items-start gap-3 flex-wrap">
-        <span className="text-[10px] font-bold uppercase tracking-widest text-rs-muted whitespace-nowrap pt-0.5">
-          {weekEvents.length} meeting{weekEvents.length !== 1 ? 's' : ''}
-        </span>
-        {companies.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
-            {companies.slice(0, 6).map((c) => (
-              <span key={c} className="text-[10px] bg-white border border-rs-border text-rs-text px-2 py-0.5 rounded-full">
-                {c}
-              </span>
-            ))}
-            {companies.length > 6 && (
-              <span className="text-[10px] text-rs-muted px-1 py-0.5">+{companies.length - 6} more</span>
-            )}
-          </div>
-        ) : (
-          <span className="text-[10px] text-rs-muted pt-0.5">No meetings this week</span>
-        )}
-      </div>
-
       {/* 7-day grid */}
       <div className="grid grid-cols-7 gap-2">
         {days.map((day) => {
@@ -213,10 +219,132 @@ function CalendarGrid({ events, weekStart, onEventClick }) {
   );
 }
 
+// ── Week summary bar ──────────────────────────────────────────────────────────
+
+function WeekSummary({ weekEvents, prevWeekEvents, selectedRep }) {
+  const classified = useMemo(() => weekEvents.map((e) => ({ event: e, ...classifyMeeting(e) })), [weekEvents]);
+
+  const categoryCounts = useMemo(() => {
+    const counts = new Map();
+    classified.forEach(({ category }) => counts.set(category, (counts.get(category) || 0) + 1));
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [classified]);
+
+  const notable = useMemo(() => {
+    const seen = new Set();
+    return classified
+      .filter((c) => c.isNotable)
+      .filter((c) => {
+        const key = c.event.Subject || c.event.Id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      })
+      .slice(0, 5);
+  }, [classified]);
+
+  const companies = useMemo(() => {
+    const names = classified.map((c) => c.company).filter(Boolean);
+    return [...new Set(names)];
+  }, [classified]);
+
+  const repLoad = useMemo(() => {
+    if (selectedRep !== 'all') return [];
+    const counts = new Map();
+    weekEvents.forEach((e) => {
+      const name = e.Owner?.Name || 'Unknown';
+      counts.set(name, (counts.get(name) || 0) + 1);
+    });
+    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  }, [weekEvents, selectedRep]);
+
+  const delta = weekEvents.length - prevWeekEvents.length;
+  const trendLabel = delta > 0 ? `▲ +${delta} vs last week` : delta < 0 ? `▼ ${delta} vs last week` : '— flat vs last week';
+  const trendColor = delta > 0 ? 'text-green-600' : delta < 0 ? 'text-red-600' : 'text-rs-muted';
+
+  return (
+    <div className="rounded-card border border-rs-border bg-white p-4 mb-6">
+      <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <span className="text-sm font-semibold text-rs-text">
+          {weekEvents.length} meeting{weekEvents.length !== 1 ? 's' : ''} this week
+        </span>
+        <span className={`text-xs font-medium ${trendColor}`}>{trendLabel}</span>
+      </div>
+
+      {/* Companies met */}
+      {companies.length > 0 && (
+        <div className="flex flex-wrap gap-1 mb-3">
+          {companies.slice(0, 8).map((c) => (
+            <span key={c} className="text-[10px] bg-white border border-rs-border text-rs-text px-2 py-0.5 rounded-full">
+              {c}
+            </span>
+          ))}
+          {companies.length > 8 && (
+            <span className="text-[10px] text-rs-muted px-1 py-0.5">+{companies.length - 8} more</span>
+          )}
+        </div>
+      )}
+
+      {/* Category breakdown */}
+      {categoryCounts.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {categoryCounts.map(([category, count]) => (
+            <span
+              key={category}
+              className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${categoryStyle(category)}`}
+            >
+              {count} {category}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-[11px] text-rs-muted mb-3">No meetings this week</p>
+      )}
+
+      {/* Notable meetings */}
+      {notable.length > 0 && (
+        <div className="mb-3">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-rs-muted mb-1.5">Notable this week</p>
+          <div className="space-y-1">
+            {notable.map(({ event, company, category }) => (
+              <div key={event.Id} className="flex items-center gap-2 text-xs">
+                <span className="text-rs-muted w-8 shrink-0">
+                  {event.StartDateTime ? format(new Date(event.StartDateTime), 'EEE') : ''}
+                </span>
+                <span className="text-rs-text truncate">{company || event.Subject || '—'}</span>
+                <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded-full border shrink-0 ${categoryStyle(category)}`}>
+                  {category}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Per-rep load */}
+      {repLoad.length > 0 && (
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-widest text-rs-muted mb-1.5">Meeting load by rep</p>
+          <div className="flex flex-wrap gap-1">
+            {repLoad.slice(0, 5).map(([name, count]) => (
+              <span key={name} className="text-[10px] bg-rs-surface border border-rs-border text-rs-text px-2 py-0.5 rounded-full">
+                {name} ({count})
+              </span>
+            ))}
+            {repLoad.length > 5 && (
+              <span className="text-[10px] text-rs-muted px-1 py-0.5">+{repLoad.length - 5} more</span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function CalendarPage() {
-  const { triggerRefresh, refreshCount } = useDashboard();
+  const { triggerRefresh, refreshCount, selectedRep } = useDashboard();
   const currentYear = new Date().getFullYear();
   const currentWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
 
@@ -237,6 +365,22 @@ export default function CalendarPage() {
   }, [selectedYear, refreshCount]);
 
   const filtered = useRepFilter(rawData);
+
+  const weekEvents = useMemo(() => {
+    const weekEnd = addDays(weekStart, 7);
+    return (filtered || []).filter((e) => {
+      const d = e.StartDateTime ? new Date(e.StartDateTime) : null;
+      return d && d >= weekStart && d < weekEnd;
+    });
+  }, [filtered, weekStart]);
+
+  const prevWeekEvents = useMemo(() => {
+    const prevStart = addDays(weekStart, -7);
+    return (filtered || []).filter((e) => {
+      const d = e.StartDateTime ? new Date(e.StartDateTime) : null;
+      return d && d >= prevStart && d < weekStart;
+    });
+  }, [filtered, weekStart]);
 
   if (loading) {
     return (
@@ -304,10 +448,17 @@ export default function CalendarPage() {
         </div>
       </div>
 
+      {/* Week summary */}
+      <WeekSummary
+        weekEvents={weekEvents}
+        prevWeekEvents={prevWeekEvents}
+        selectedRep={selectedRep}
+      />
+
       {/* Calendar grid */}
       <div className="rounded-card border border-rs-border bg-white p-4">
         <CalendarGrid
-          events={filtered || []}
+          weekEvents={weekEvents}
           weekStart={weekStart}
           onEventClick={setSelectedEvent}
         />

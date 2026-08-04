@@ -4,6 +4,7 @@ import https from 'https';
 import http from 'http';
 import { snowflakeQuery } from './functions/_lib/snowflake.js';
 import { fetchAccountUsage } from './functions/_lib/accountUsage.js';
+import { fetchCurrentClientsSnowflakeData } from './functions/_lib/currentClients.js';
 
 // Stores instance URL after SOAP login — set via POST /sf-instance-url from the app
 let sfInstanceUrl = null;
@@ -106,6 +107,18 @@ export default defineConfig(({ mode }) => {
             const accountId = searchParams.get('accountId') || undefined;
             try {
               const result = await fetchAccountUsage(env, { clientId, accountId });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+
+          // Local mirror of functions/api/snowflake/current-clients.js
+          server.middlewares.use('/api/snowflake/current-clients', async (req, res) => {
+            try {
+              const result = await fetchCurrentClientsSnowflakeData(env);
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify(result));
             } catch (err) {

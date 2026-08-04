@@ -1,4 +1,4 @@
-export default function DataTable({ columns, rows, getRowClassName }) {
+export default function DataTable({ columns, rows, getRowClassName, onRowClick, sortKey, sortDir, onSort }) {
   if (!rows || rows.length === 0) return null;
 
   return (
@@ -6,14 +6,19 @@ export default function DataTable({ columns, rows, getRowClassName }) {
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr>
-            {columns.map((col) => (
-              <th
-                key={col.key}
-                className="bg-rs-teal text-white px-3 py-2 text-left font-semibold text-xs tracking-wide whitespace-nowrap first:rounded-tl last:rounded-tr"
-              >
-                {col.label}
-              </th>
-            ))}
+            {columns.map((col) => {
+              const isSorted = onSort && sortKey === col.key;
+              return (
+                <th
+                  key={col.key}
+                  onClick={onSort ? () => onSort(col.key) : undefined}
+                  className={`bg-rs-teal text-white px-3 py-2 text-left font-semibold text-xs tracking-wide whitespace-nowrap first:rounded-tl last:rounded-tr ${onSort ? 'cursor-pointer select-none hover:bg-rs-teal/90' : ''}`}
+                >
+                  {col.label}
+                  {isSorted && <span className="ml-1">{sortDir === 'asc' ? '▲' : '▼'}</span>}
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
@@ -22,7 +27,8 @@ export default function DataTable({ columns, rows, getRowClassName }) {
             return (
               <tr
                 key={row.Id || i}
-                className={`border-b border-rs-border hover:bg-[#E8EBF2] transition-colors ${extra}`}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                className={`border-b border-rs-border hover:bg-[#E8EBF2] transition-colors ${onRowClick ? 'cursor-pointer' : ''} ${extra}`}
               >
                 {columns.map((col) => (
                   <td key={col.key} className="px-3 py-2 whitespace-nowrap">

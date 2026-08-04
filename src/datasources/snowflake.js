@@ -33,3 +33,15 @@ export async function fetchAccountUsage({ accountId, clientId } = {}) {
   if (!res.ok || json.error) throw new Error(json.error || 'Snowflake query failed');
   return json;
 }
+
+// Bulk, all-clients-at-once Snowflake data for the Current Clients page —
+// { health, usage, distinctUsers, support, commercial, daas, batch, failures }.
+// Rows already come back cast (numbers/booleans/dates), unlike fetchSnowflakeClients()
+// above, since functions/_lib/currentClients.js uses the same named-object
+// casting as functions/_lib/accountUsage.js rather than positional arrays.
+export async function fetchCurrentClientsSnowflakeData() {
+  const res = await fetch('/api/snowflake/current-clients');
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error || 'Snowflake query failed');
+  return json;
+}

@@ -256,6 +256,132 @@ export async function fetchAccountUsageChartData(env, params) {
   return out;
 }
 
+// ---- Per-user usage summary + drill-down ("Users" view) -------------------
+// Ported from client-health-app's userSummaryQuery()/userActivityQuery() —
+// same three source tables (RS_ANALYTICS_STATS_MASTER for forecast runs,
+// RS_ANALYTICS_STATS_INFO for the per-run loan/security breakdown joined on
+// RS_RUN_ID, RS_QUERY_STATS_MASTER for query runs) and the same admin/
+// support/batch heuristic for System/Batch vs End User classification
+// already used by this file's own `distinctUsers` query above.
+function userSummarySql(id, daysBack) {
+  return `WITH fc_base AS (
+        SELECT rs.RS_USER_ID,
+               COUNT(DISTINCT rs.RS_RUN_ID) AS FORECAST_COUNT,
+               MIN(rs.RS_RUN_DATE::DATE)    AS FC_FIRST,
+               MAX(rs.RS_RUN_DATE::DATE)    AS FC_LAST,
+               COUNT(DISTINCT rs.RS_RUN_DATE::DATE) AS FC_ACTIVE_DAYS
+        FROM EDGE.PUBLIC.RS_ANALYTICS_STATS_MASTER rs
+        JOIN DIM_CLIENT dc ON dc.SNOWFLAKE_CLIENT_IDENTIFIER = rs.RS_COMPANY_ID
+        WHERE dc.CLIENT_ID = '${id}' AND rs.RS_RUN_DATE::DATE >= DATEADD('day', -${daysBack}, CURRENT_DATE())
+        GROUP BY rs.RS_USER_ID
+    ),
+    fc_loans AS (
+        SELECT rs.RS_USER_ID, SUM(i.RS_TOTAL_SECURITIES) AS LOAN_COUNT
+        FROM EDGE.PUBLIC.RS_ANALYTICS_STATS_MASTER rs
+        JOIN EDGE.PUBLIC.RS_ANALYTICS_STATS_INFO i ON rs.RS_RUN_ID = i.RS_RUN_ID
+        JOIN DIM_CLIENT dc ON dc.SNOWFLAKE_CLIENT_IDENTIFIER = rs.RS_COMPANY_ID
+        WHERE dc.CLIENT_ID = '${id}' AND rs.RS_RUN_DATE::DATE >= DATEADD('day', -${daysBack}, CURRENT_DATE())
+          AND i.RS_SECURITY_TYPE = 'WholeLoan'
+        GROUP BY rs.RS_USER_ID
+    ),
+    fc_sec_pre AS (
+        SELECT rs.RS_USER_ID, i.RS_SECURITY_TYPE, SUM(i.RS_TOTAL_SECURITIES) AS TYPE_COUNT
+        FROM EDGE.PUBLIC.RS_ANALYTICS_STATS_MASTER rs
+        JOIN EDGE.PUBLIC.RS_ANALYTICS_STATS_INFO i ON rs.RS_RUN_ID = i.RS_RUN_ID
+        JOIN DIM_CLIENT dc ON dc.SNOWFLAKE_CLIENT_IDENTIFIER = rs.RS_COMPANY_ID
+        WHERE dc.CLIENT_ID = '${id}' AND rs.RS_RUN_DATE::DATE >= DATEADD('day', -${daysBack}, CURRENT_DATE())
+          AND i.RS_SECURITY_TYPE IS NOT NULL AND i.RS_SECURITY_TYPE != 'WholeLoan'
+        GROUP BY rs.RS_USER_ID, i.RS_SECURITY_TYPE
+    ),
+    fc_sec AS (
+        SELECT RS_USER_ID, OBJECT_AGG(RS_SECURITY_TYPE, TYPE_COUNT::VARIANT) AS SECURITY_TYPES, SUM(TYPE_COUNT) AS SECURITY_COUNT
+        FROM fc_sec_pre GROUP BY RS_USER_ID
+    ),
+    fc_at_pre AS (
+        SELECT rs.RS_USER_ID, rs.RS_ANALYTICS_TYPE, COUNT(DISTINCT rs.RS_RUN_ID) AS AT_COUNT
+        FROM EDGE.PUBLIC.RS_ANALYTICS_STATS_MASTER rs
+        JOIN DIM_CLIENT dc ON dc.SNOWFLAKE_CLIENT_IDENTIFIER = rs.RS_COMPANY_ID
+        WHERE dc.CLIENT_ID = '${id}' AND rs.RS_RUN_DATE::DATE >= DATEADD('day', -${daysBack}, CURRENT_DATE())
+          AND rs.RS_ANALYTICS_TYPE IS NOT NULL
+        GROUP BY rs.RS_USER_ID, rs.RS_ANALYTICS_TYPE
+    ),
+    fc_at AS (
+        SELECT RS_USER_ID, OBJECT_AGG(RS_ANALYTICS_TYPE, AT_COUNT::VARIANT) AS ANALYTICS_TYPES
+        FROM fc_at_pre GROUP BY RS_USER_ID
+    ),
+    qr AS (
+        SELECT q.RS_USER_ID, COUNT(*) AS QUERY_COUNT,
+               MIN(q.RS_RUN_DATE::DATE) AS Q_FIRST, MAX(q.RS_RUN_DATE::DATE) AS Q_LAST,
+               COUNT(DISTINCT q.RS_RUN_DATE::DATE) AS Q_ACTIVE_DAYS
+        FROM EDGE.PUBLIC.RS_QUERY_STATS_MASTER q
+        JOIN DIM_CLIENT dc ON dc.SNOWFLAKE_CLIENT_IDENTIFIER = q.RS_COMPANY_ID
+        WHERE dc.CLIENT_ID = '${id}' AND q.RS_RUN_DATE::DATE >= DATEADD('day', -${daysBack}, CURRENT_DATE())
+        GROUP BY q.RS_USER_ID
+    )
+    SELECT
+        COALESCE(fc.RS_USER_ID, qr.RS_USER_ID) AS RS_USER_ID,
+        COALESCE(fc.FORECAST_COUNT, 0) + COALESCE(qr.QUERY_COUNT, 0) AS RUN_COUNT,
+        COALESCE(qr.QUERY_COUNT, 0) AS QUERY_COUNT,
+        COALESCE(fc.FORECAST_COUNT, 0) AS FORECAST_COUNT,
+        LEAST(COALESCE(fc.FC_FIRST, qr.Q_FIRST), COALESCE(qr.Q_FIRST, fc.FC_FIRST)) AS FIRST_ACTIVE,
+        GREATEST(COALESCE(fc.FC_LAST, '1900-01-01'::DATE), COALESCE(qr.Q_LAST, '1900-01-01'::DATE)) AS LAST_ACTIVE,
+        COALESCE(fc.FC_ACTIVE_DAYS, 0) + COALESCE(qr.Q_ACTIVE_DAYS, 0) AS ACTIVE_DAYS,
+        COALESCE(fl.LOAN_COUNT, 0) AS LOAN_COUNT,
+        COALESCE(st.SECURITY_COUNT, 0) AS SECURITY_COUNT,
+        st.SECURITY_TYPES,
+        at.ANALYTICS_TYPES,
+        CASE
+            WHEN LOWER(COALESCE(fc.RS_USER_ID, qr.RS_USER_ID)) LIKE '%admin%'
+              OR LOWER(COALESCE(fc.RS_USER_ID, qr.RS_USER_ID)) LIKE '%support%'
+              OR LOWER(COALESCE(fc.RS_USER_ID, qr.RS_USER_ID)) LIKE '%batch%'
+            THEN 'System/Batch' ELSE 'End User'
+        END AS USER_TYPE
+    FROM fc_base fc
+    FULL OUTER JOIN qr ON fc.RS_USER_ID = qr.RS_USER_ID
+    LEFT JOIN fc_loans fl ON COALESCE(fc.RS_USER_ID, qr.RS_USER_ID) = fl.RS_USER_ID
+    LEFT JOIN fc_sec   st ON COALESCE(fc.RS_USER_ID, qr.RS_USER_ID) = st.RS_USER_ID
+    LEFT JOIN fc_at    at ON COALESCE(fc.RS_USER_ID, qr.RS_USER_ID) = at.RS_USER_ID
+    ORDER BY RUN_COUNT DESC
+    LIMIT 200`;
+}
+
+function userActivitySql(id, userId, daysBack) {
+  return `SELECT rs.RS_RUN_DATE::DATE AS RUN_DATE, COUNT(*) AS RUN_COUNT
+    FROM EDGE.PUBLIC.RS_ANALYTICS_STATS_MASTER rs
+    JOIN DIM_CLIENT dc ON dc.SNOWFLAKE_CLIENT_IDENTIFIER = rs.RS_COMPANY_ID
+    WHERE dc.CLIENT_ID = '${id}'
+      AND rs.RS_USER_ID = '${sqlEsc(userId)}'
+      AND rs.RS_RUN_DATE::DATE >= DATEADD('day', -${daysBack}, CURRENT_DATE())
+    GROUP BY rs.RS_RUN_DATE::DATE
+    ORDER BY RUN_DATE`;
+}
+
+export async function fetchAccountUsers(env, params) {
+  const ctx = await resolveClientContext(env, params);
+  if (!ctx.id) return { clientId: null, mapped: false, users: [], failures: [] };
+
+  const daysBack = safeDaysBack(params.daysBack);
+  try {
+    const result = await snowflakeQuery(env, userSummarySql(ctx.id, daysBack));
+    return { clientId: ctx.id, mapped: true, users: rowsToObjects(result), failures: [] };
+  } catch {
+    return { clientId: ctx.id, mapped: true, users: [], failures: ['users'] };
+  }
+}
+
+export async function fetchUserActivity(env, params) {
+  const ctx = await resolveClientContext(env, params);
+  if (!ctx.id || !params.userId) return { clientId: ctx.id, userId: params.userId || null, activity: [] };
+
+  const daysBack = safeDaysBack(params.daysBack);
+  try {
+    const result = await snowflakeQuery(env, userActivitySql(ctx.id, params.userId, daysBack));
+    return { clientId: ctx.id, userId: params.userId, activity: rowsToObjects(result) };
+  } catch {
+    return { clientId: ctx.id, userId: params.userId, activity: [] };
+  }
+}
+
 export async function fetchAccountUsage(env, params) {
   const ctx = await resolveClientContext(env, params);
   if (!ctx.id) return { clientId: null, mapped: false, failures: [] };

@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react';
 import https from 'https';
 import http from 'http';
 import { snowflakeQuery } from './functions/_lib/snowflake.js';
-import { fetchAccountUsage, fetchAccountUsageChartData } from './functions/_lib/accountUsage.js';
+import { fetchAccountUsage, fetchAccountUsageChartData, fetchAccountUsers, fetchUserActivity } from './functions/_lib/accountUsage.js';
 import { fetchCurrentClientsSnowflakeData } from './functions/_lib/currentClients.js';
 import { fetchFreshdeskData } from './functions/_lib/freshdesk.js';
 import { fetchJiraData } from './functions/_lib/jira.js';
@@ -127,6 +127,39 @@ export default defineConfig(({ mode }) => {
             const daysBack = searchParams.get('daysBack') || undefined;
             try {
               const result = await fetchAccountUsageChartData(env, { clientId, accountId, daysBack });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+
+          // Local mirror of functions/api/snowflake/account-users.js
+          server.middlewares.use('/api/snowflake/account-users', async (req, res) => {
+            const { searchParams } = new URL(req.url, 'http://localhost');
+            const clientId = searchParams.get('clientId') || undefined;
+            const accountId = searchParams.get('accountId') || undefined;
+            const daysBack = searchParams.get('daysBack') || undefined;
+            try {
+              const result = await fetchAccountUsers(env, { clientId, accountId, daysBack });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+
+          // Local mirror of functions/api/snowflake/account-user-activity.js
+          server.middlewares.use('/api/snowflake/account-user-activity', async (req, res) => {
+            const { searchParams } = new URL(req.url, 'http://localhost');
+            const clientId = searchParams.get('clientId') || undefined;
+            const accountId = searchParams.get('accountId') || undefined;
+            const userId = searchParams.get('userId') || undefined;
+            const daysBack = searchParams.get('daysBack') || undefined;
+            try {
+              const result = await fetchUserActivity(env, { clientId, accountId, userId, daysBack });
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify(result));
             } catch (err) {

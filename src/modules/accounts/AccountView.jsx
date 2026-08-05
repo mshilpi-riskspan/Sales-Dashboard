@@ -18,6 +18,7 @@ import { isClientTier } from '../../config/accountTier';
 import StatTile from './StatTile';
 import SimpleTablePanel from './SimpleTablePanel';
 import UsageCategoryPanel from './UsageCategoryPanel';
+import UsersPanel from './UsersPanel';
 import ContactListPanel from './ContactListPanel';
 import ActivityListPanel from './ActivityListPanel';
 import { TicketListPanel, TicketDetailPanel } from './TicketPanels';
@@ -164,7 +165,7 @@ export default function AccountView({ accountId, onBack }) {
   // open (mutually exclusive by construction, matching SlidePanel's own
   // one-at-a-time design); the four `active*` vars hold a single record
   // drilled into from a list, one level deeper.
-  const [openPanel, setOpenPanel] = useState(null); // { type: 'deals'|'contacts'|'activity'|'usage'|'datasets'|'tickets'|'issues'|'l3'|'liveDags' }
+  const [openPanel, setOpenPanel] = useState(null); // { type: 'deals'|'contacts'|'activity'|'usage'|'users'|'datasets'|'tickets'|'issues'|'l3'|'liveDags' }
   const [activeDeal, setActiveDeal] = useState(null);
   const [activeTicket, setActiveTicket] = useState(null);
   const [activeIssue, setActiveIssue] = useState(null);
@@ -353,7 +354,15 @@ export default function AccountView({ accountId, onBack }) {
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="bg-rs-surface rounded-lg p-3">
                 <p className="text-[10px] uppercase tracking-widest text-rs-muted">Current ARR</p>
-                {loading ? <Skeleton className="h-6 w-16 mt-1" /> : <p className="text-lg font-semibold text-rs-text mt-0.5">{formatARR(account?.Current_ARR__c)}</p>}
+                {loading ? <Skeleton className="h-6 w-16 mt-1" /> : (
+                  <button
+                    onClick={openOpps.length > 0 ? () => setOpenPanel({ type: 'deals' }) : undefined}
+                    disabled={openOpps.length === 0}
+                    className={`text-lg font-semibold text-rs-text mt-0.5 ${openOpps.length > 0 ? 'cursor-pointer hover:text-rs-teal transition-colors' : ''}`}
+                  >
+                    {formatARR(account?.Current_ARR__c)}
+                  </button>
+                )}
               </div>
               {loading ? (
                 <div className="bg-rs-surface rounded-lg p-3">
@@ -404,7 +413,7 @@ export default function AccountView({ accountId, onBack }) {
                 <StatTile
                   label="Distinct Users (30d)"
                   value={formatNum(distinctUsers?.DISTINCT_USERS)}
-                  onClick={() => setOpenPanel({ type: 'usage' })}
+                  onClick={() => setOpenPanel({ type: 'users' })}
                 />
                 <StatTile
                   label="Model Executions (30d)"
@@ -567,6 +576,12 @@ export default function AccountView({ accountId, onBack }) {
         open={openPanel?.type === 'usage'}
         onClose={() => setOpenPanel(null)}
         usage={usage}
+        accountId={accountId}
+        clientId={usage?.clientId}
+      />
+      <UsersPanel
+        open={openPanel?.type === 'users'}
+        onClose={() => setOpenPanel(null)}
         accountId={accountId}
         clientId={usage?.clientId}
       />

@@ -50,6 +50,33 @@ export async function fetchAccountUsageChartData({ accountId, clientId, daysBack
   return json;
 }
 
+// Per-user usage summary (forecast + query runs, loans/securities) for the
+// Users drill-down on AccountView — { users, failures }.
+export async function fetchAccountUsers({ accountId, clientId, daysBack } = {}) {
+  const params = new URLSearchParams();
+  if (clientId) params.set('clientId', clientId);
+  else if (accountId) params.set('accountId', accountId);
+  if (daysBack) params.set('daysBack', daysBack);
+  const res = await fetch(`/api/snowflake/account-users?${params}`);
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error || 'Snowflake query failed');
+  return json;
+}
+
+// Daily forecast-run counts for one user — click-to-expand detail inside the
+// Users panel.
+export async function fetchUserActivity({ accountId, clientId, userId, daysBack } = {}) {
+  const params = new URLSearchParams();
+  if (clientId) params.set('clientId', clientId);
+  else if (accountId) params.set('accountId', accountId);
+  if (userId) params.set('userId', userId);
+  if (daysBack) params.set('daysBack', daysBack);
+  const res = await fetch(`/api/snowflake/account-user-activity?${params}`);
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error || 'Snowflake query failed');
+  return json;
+}
+
 // Bulk, all-clients-at-once Snowflake data for the Current Clients page —
 // { health, usage, distinctUsers, support, commercial, daas, batch, failures }.
 // Rows already come back cast (numbers/booleans/dates), unlike fetchSnowflakeClients()

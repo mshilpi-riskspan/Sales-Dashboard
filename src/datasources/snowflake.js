@@ -63,13 +63,16 @@ export async function fetchAccountUsers({ accountId, clientId, daysBack } = {}) 
   return json;
 }
 
-// Daily forecast-run counts for one user — click-to-expand detail inside the
-// Users panel.
-export async function fetchUserActivity({ accountId, clientId, userId, daysBack } = {}) {
+// Daily forecast + query run counts summed across one or more users —
+// powers both the single-user row expand and the aggregate chart when the
+// Users filter in the Usage panel has users selected. `userIds` accepts a
+// single id string or an array.
+export async function fetchUserActivity({ accountId, clientId, userIds, daysBack } = {}) {
   const params = new URLSearchParams();
   if (clientId) params.set('clientId', clientId);
   else if (accountId) params.set('accountId', accountId);
-  if (userId) params.set('userId', userId);
+  const ids = Array.isArray(userIds) ? userIds : [userIds].filter(Boolean);
+  if (ids.length > 0) params.set('userIds', ids.join(','));
   if (daysBack) params.set('daysBack', daysBack);
   const res = await fetch(`/api/snowflake/account-user-activity?${params}`);
   const json = await res.json();

@@ -345,14 +345,32 @@ function userSummarySql(id, daysBack) {
     LIMIT 200`;
 }
 
-function userActivitySql(id, userId, daysBack) {
-  return `SELECT rs.RS_RUN_DATE::DATE AS RUN_DATE, COUNT(*) AS RUN_COUNT
-    FROM EDGE.PUBLIC.RS_ANALYTICS_STATS_MASTER rs
-    JOIN DIM_CLIENT dc ON dc.SNOWFLAKE_CLIENT_IDENTIFIER = rs.RS_COMPANY_ID
-    WHERE dc.CLIENT_ID = '${id}'
-      AND rs.RS_USER_ID = '${sqlEsc(userId)}'
-      AND rs.RS_RUN_DATE::DATE >= DATEADD('day', -${daysBack}, CURRENT_DATE())
-    GROUP BY rs.RS_RUN_DATE::DATE
+// Daily forecast + query run counts for one or more users — powers both the
+// per-row expand (single user) and the aggregate chart when the Users filter
+// in the Usage panel has one or more users selected (summed across all of
+// them via the IN-list).
+function userActivitySql(id, userIds, daysBack) {
+  const inList = userIds.map((u) => `'${sqlEsc(u)}'`).join(',');
+  return `WITH fc AS (
+      SELECT rs.RS_RUN_DATE::DATE AS RUN_DATE, COUNT(*) AS FORECAST_RUN_COUNT
+      FROM EDGE.PUBLIC.RS_ANALYTICS_STATS_MASTER rs
+      JOIN DIM_CLIENT dc ON dc.SNOWFLAKE_CLIENT_IDENTIFIER = rs.RS_COMPANY_ID
+      WHERE dc.CLIENT_ID = '${id}' AND rs.RS_USER_ID IN (${inList})
+        AND rs.RS_RUN_DATE::DATE >= DATEADD('day', -${daysBack}, CURRENT_DATE())
+      GROUP BY 1
+    ),
+    qr AS (
+      SELECT q.RS_RUN_DATE::DATE AS RUN_DATE, COUNT(*) AS QUERY_RUN_COUNT
+      FROM EDGE.PUBLIC.RS_QUERY_STATS_MASTER q
+      JOIN DIM_CLIENT dc ON dc.SNOWFLAKE_CLIENT_IDENTIFIER = q.RS_COMPANY_ID
+      WHERE dc.CLIENT_ID = '${id}' AND q.RS_USER_ID IN (${inList})
+        AND q.RS_RUN_DATE::DATE >= DATEADD('day', -${daysBack}, CURRENT_DATE())
+      GROUP BY 1
+    )
+    SELECT COALESCE(fc.RUN_DATE, qr.RUN_DATE) AS RUN_DATE,
+           COALESCE(fc.FORECAST_RUN_COUNT, 0) AS FORECAST_RUN_COUNT,
+           COALESCE(qr.QUERY_RUN_COUNT, 0) AS QUERY_RUN_COUNT
+    FROM fc FULL OUTER JOIN qr ON fc.RUN_DATE = qr.RUN_DATE
     ORDER BY RUN_DATE`;
 }
 
@@ -371,14 +389,15 @@ export async function fetchAccountUsers(env, params) {
 
 export async function fetchUserActivity(env, params) {
   const ctx = await resolveClientContext(env, params);
-  if (!ctx.id || !params.userId) return { clientId: ctx.id, userId: params.userId || null, activity: [] };
+  const userIds = (params.userIds || '').split(',').map((u) => u.trim()).filter(Boolean);
+  if (!ctx.id || userIds.length === 0) return { clientId: ctx.id, activity: [] };
 
   const daysBack = safeDaysBack(params.daysBack);
   try {
-    const result = await snowflakeQuery(env, userActivitySql(ctx.id, params.userId, daysBack));
-    return { clientId: ctx.id, userId: params.userId, activity: rowsToObjects(result) };
+    const result = await snowflakeQuery(env, userActivitySql(ctx.id, userIds, daysBack));
+    return { clientId: ctx.id, activity: rowsToObjects(result) };
   } catch {
-    return { clientId: ctx.id, userId: params.userId, activity: [] };
+    return { clientId: ctx.id, activity: [] };
   }
 }
 

@@ -156,10 +156,10 @@ export default defineConfig(({ mode }) => {
             const { searchParams } = new URL(req.url, 'http://localhost');
             const clientId = searchParams.get('clientId') || undefined;
             const accountId = searchParams.get('accountId') || undefined;
-            const userId = searchParams.get('userId') || undefined;
+            const userIds = searchParams.get('userIds') || undefined;
             const daysBack = searchParams.get('daysBack') || undefined;
             try {
-              const result = await fetchUserActivity(env, { clientId, accountId, userId, daysBack });
+              const result = await fetchUserActivity(env, { clientId, accountId, userIds, daysBack });
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify(result));
             } catch (err) {

@@ -202,6 +202,60 @@ const QUERY_SET = {
   },
 };
 
+// Whitelisted integer range for the flexible usage chart's lookback window —
+// same posture as client-health's own safeDaysBack() validator: the Snowflake
+// SQL API has no bind parameters, so anything interpolated into a query must
+// be validated first. Capped at 1095 days (3yr) to support yearly bucketing
+// client-side without an unbounded query.
+function safeDaysBack(daysBack) {
+  const d = Math.floor(Number(daysBack));
+  if (!Number.isFinite(d) || d < 1 || d > 1095) return 90;
+  return d;
+}
+
+// Daily-grain rows for the flexible usage chart (any metric, any lookback,
+// client-side bucketed into week/month/quarter/year) — deliberately separate
+// from the main fetchAccountUsage() fan-out below so adjusting the chart's
+// date range only re-fires these two lightweight queries, not the other
+// ~8 unrelated ones (health/support/commercial/etc).
+const CHART_QUERY_SET = {
+  usageDaily: ({ id, daysBack }) => `SELECT METRIC_DATE, API_CALL_VOLUME, FORECAST_RUN_COUNT, MODEL_EXECUTIONS,
+      MODEL_FAILURES, SCENARIO_RUNS, STRESS_TEST_RUNS, PREMIUM_FEATURE_USAGE_COUNT, OVERRIDE_COUNT,
+      FORECAST_LOAN_COUNT, FORECAST_SECURITY_COUNT, AVG_API_LATENCY_MS
+    FROM FACT_USAGE_METRICS
+    WHERE CLIENT_ID='${id}' AND METRIC_DATE >= DATEADD('day', -${daysBack}, CURRENT_DATE())
+    ORDER BY METRIC_DATE ASC`,
+
+  distinctUsersDaily: ({ id, daysBack }) => `SELECT RS_RUN_DATE::DATE AS METRIC_DATE, COUNT(DISTINCT RS_USER_ID) AS DISTINCT_USERS
+    FROM EDGE.PUBLIC.RS_ANALYTICS_STATS_MASTER
+    WHERE RS_RUN_DATE::DATE >= DATEADD('day', -${daysBack}, CURRENT_DATE())
+      AND RS_COMPANY_ID = (SELECT SNOWFLAKE_CLIENT_IDENTIFIER FROM DIM_CLIENT WHERE CLIENT_ID='${id}')
+    GROUP BY 1 ORDER BY 1`,
+};
+
+export async function fetchAccountUsageChartData(env, params) {
+  const ctx = await resolveClientContext(env, params);
+  if (!ctx.id) return { clientId: null, mapped: false, usageDaily: [], distinctUsersDaily: [], failures: [] };
+
+  const daysBack = safeDaysBack(params.daysBack);
+  const keys = Object.keys(CHART_QUERY_SET);
+  const settled = await Promise.allSettled(
+    keys.map((key) => snowflakeQuery(env, CHART_QUERY_SET[key]({ id: ctx.id, daysBack })))
+  );
+
+  const out = { clientId: ctx.id, mapped: true, failures: [] };
+  keys.forEach((key, i) => {
+    const result = settled[i];
+    if (result.status === 'rejected') {
+      out.failures.push(key);
+      out[key] = [];
+      return;
+    }
+    out[key] = rowsToObjects(result.value);
+  });
+  return out;
+}
+
 export async function fetchAccountUsage(env, params) {
   const ctx = await resolveClientContext(env, params);
   if (!ctx.id) return { clientId: null, mapped: false, failures: [] };

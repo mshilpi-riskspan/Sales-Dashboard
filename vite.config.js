@@ -3,8 +3,11 @@ import react from '@vitejs/plugin-react';
 import https from 'https';
 import http from 'http';
 import { snowflakeQuery } from './functions/_lib/snowflake.js';
-import { fetchAccountUsage } from './functions/_lib/accountUsage.js';
+import { fetchAccountUsage, fetchAccountUsageChartData } from './functions/_lib/accountUsage.js';
 import { fetchCurrentClientsSnowflakeData } from './functions/_lib/currentClients.js';
+import { fetchFreshdeskData } from './functions/_lib/freshdesk.js';
+import { fetchJiraData } from './functions/_lib/jira.js';
+import { fetchAstronomerData } from './functions/_lib/astronomer.js';
 
 // Stores instance URL after SOAP login — set via POST /sf-instance-url from the app
 let sfInstanceUrl = null;
@@ -88,7 +91,8 @@ export default defineConfig(({ mode }) => {
                 env,
                 `SELECT CLIENT_ID, CLIENT_NAME, DISPLAY_NAME, SALESFORCE_ACCOUNT_ID,
                         SNOWFLAKE_CLIENT_IDENTIFIER, CONTRACT_TIER, IS_ACTIVE,
-                        IMPLIED_IS_ACTIVE, INDUSTRY, SEGMENT, SALES_LEAD
+                        IMPLIED_IS_ACTIVE, INDUSTRY, SEGMENT, SALES_LEAD,
+                        FRESHDESK_COMPANY_ID, JIRA_PROJECT_KEY
                  FROM DIM_CLIENT
                  ORDER BY COALESCE(DISPLAY_NAME, CLIENT_NAME)`
               );
@@ -115,10 +119,62 @@ export default defineConfig(({ mode }) => {
             }
           });
 
+          // Local mirror of functions/api/snowflake/account-usage-chart.js
+          server.middlewares.use('/api/snowflake/account-usage-chart', async (req, res) => {
+            const { searchParams } = new URL(req.url, 'http://localhost');
+            const clientId = searchParams.get('clientId') || undefined;
+            const accountId = searchParams.get('accountId') || undefined;
+            const daysBack = searchParams.get('daysBack') || undefined;
+            try {
+              const result = await fetchAccountUsageChartData(env, { clientId, accountId, daysBack });
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+
           // Local mirror of functions/api/snowflake/current-clients.js
           server.middlewares.use('/api/snowflake/current-clients', async (req, res) => {
             try {
               const result = await fetchCurrentClientsSnowflakeData(env);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+
+          // Local mirror of functions/api/freshdesk/current.js
+          server.middlewares.use('/api/freshdesk/current', async (req, res) => {
+            try {
+              const result = await fetchFreshdeskData(env);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+
+          // Local mirror of functions/api/jira/current.js
+          server.middlewares.use('/api/jira/current', async (req, res) => {
+            try {
+              const result = await fetchJiraData(env);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+
+          // Local mirror of functions/api/astronomer/current.js
+          server.middlewares.use('/api/astronomer/current', async (req, res) => {
+            try {
+              const result = await fetchAstronomerData(env);
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify(result));
             } catch (err) {

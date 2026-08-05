@@ -53,3 +53,23 @@ export function findBestMatch(clientName, accounts) {
   }
   return best ? { account: best, score: bestScore } : null;
 }
+
+// A short, manually-typed admin label (e.g. "PacLife") won't score well
+// against a client's full legal name via bigram similarity alone
+// ("Pacific Life Insurance Company" vs "PacLife" scores far below any sane
+// threshold) — check for plain substring containment first, same
+// bidirectional check the per-client Snowflake SQL queries already use
+// against DIM_CLIENT's curated DISPLAY_NAME, before falling back to a score.
+export function looksLikeMatch(nameA, nameB, threshold = 0.5) {
+  const a = (nameA || '').toLowerCase().trim();
+  const b = (nameB || '').toLowerCase().trim();
+  if (!a || !b) return false;
+  if (a === b || a.includes(b) || b.includes(a)) return true;
+  return similarityScore(nameA, nameB) >= threshold;
+}
+
+// Alnum-only lowercase, for loose CLIENT_TAG/DAG_ID/tag matching (Airflow,
+// Astronomer) where identifiers are short slugs rather than display names.
+export function normalizeForTagMatch(s) {
+  return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}

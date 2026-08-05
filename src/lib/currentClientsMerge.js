@@ -6,8 +6,9 @@
 // unconfirmed fuzzy suggestion is NOT auto-applied here, same as
 // AccountMapping.jsx requires an explicit human Accept before it counts.
 import { isClientTier } from '../config/accountTier';
-import { similarityScore } from './accountMatch';
+import { looksLikeMatch, normalizeForTagMatch } from './accountMatch';
 import { CLIENT_TAG_TO_ACCOUNT_ID } from '../config/clientTagMap';
+import { matchFreshdeskTickets, matchJiraIssues, matchAstroDags, knownTagsForAccount } from './externalDataMatch';
 
 // Inverted: accountId -> Set<tag> (several tags can map to one account, e.g.
 // a client with separate DaaS feeds per product line).
@@ -24,29 +25,10 @@ function loadOverrideMap() {
   catch { return {}; }
 }
 
-function normalizeForTagMatch(s) {
-  return (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
 function keyByClientId(rows) {
   const map = new Map();
   for (const row of rows) if (row.CLIENT_ID) map.set(row.CLIENT_ID, row);
   return map;
-}
-
-// DAAS_DATASET_METRICS.COMPANY_NAME is a short, manually-typed admin label
-// (e.g. "PacLife"), not the client's full legal name — a bigram-similarity
-// score against the raw Salesforce Account name alone misses it entirely
-// ("Pacific Life Insurance Company" vs "PacLife" scores far below any sane
-// threshold). accountUsage.js's per-client SQL avoids this by matching
-// against DIM_CLIENT's curated DISPLAY_NAME with a bidirectional substring
-// check before ever falling back to a similarity score — do the same here.
-function looksLikeMatch(nameA, nameB, threshold = 0.5) {
-  const a = (nameA || '').toLowerCase().trim();
-  const b = (nameB || '').toLowerCase().trim();
-  if (!a || !b) return false;
-  if (a === b || a.includes(b) || b.includes(a)) return true;
-  return similarityScore(nameA, nameB) >= threshold;
 }
 
 // Authoritative CLIENT_TAG_TO_ACCOUNT_ID match when we have one (exact,
@@ -100,7 +82,67 @@ function aggregateBatch(knownTags, matchName, batchRows) {
   };
 }
 
-export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData, openOppCounts }) {
+// ---- Freshdesk / Jira / Astronomer aggregation --------------------------
+// Each takes the already-matched (per-account) row subset from
+// src/lib/externalDataMatch.js and reduces it to flat summary columns.
+
+function aggregateFreshdesk(tickets) {
+  if (!tickets.length) {
+    return { FdOpenTickets: null, FdEscalatedTickets: null, FdUrgentTickets: null, FdAvgFirstResponseHrs: null, FdOldestOpenAgeDays: null };
+  }
+  const open = tickets.filter((t) => t.status === 2 || t.status === 3); // Open, Pending
+  const escalated = tickets.filter((t) => t.is_escalated);
+  const urgent = tickets.filter((t) => t.priority === 4); // Urgent
+  const responseHours = tickets
+    .filter((t) => t.stats?.first_responded_at)
+    .map((t) => (new Date(t.stats.first_responded_at) - new Date(t.created_at)) / 3600000);
+  const oldestOpenAgeDays = open.length
+    ? Math.max(...open.map((t) => (Date.now() - new Date(t.created_at)) / 86400000))
+    : null;
+  return {
+    FdOpenTickets: open.length,
+    FdEscalatedTickets: escalated.length,
+    FdUrgentTickets: urgent.length,
+    FdAvgFirstResponseHrs: responseHours.length
+      ? Math.round((responseHours.reduce((sum, h) => sum + h, 0) / responseHours.length) * 10) / 10
+      : null,
+    FdOldestOpenAgeDays: oldestOpenAgeDays != null ? Math.round(oldestOpenAgeDays) : null,
+  };
+}
+
+function aggregateJira(issues) {
+  if (!issues.length) {
+    return { JiraOpenIssues: null, JiraHighPriorityIssues: null, JiraBugCount: null, JiraOldestOpenAgeDays: null };
+  }
+  const open = issues.filter((i) => i.fields?.status?.statusCategory?.key !== 'done');
+  const highPriority = open.filter((i) => ['Highest', 'High'].includes(i.fields?.priority?.name));
+  const bugs = open.filter((i) => i.fields?.issuetype?.name === 'Bug');
+  const oldestOpenAgeDays = open.length
+    ? Math.max(...open.map((i) => (Date.now() - new Date(i.fields.created)) / 86400000))
+    : null;
+  return {
+    JiraOpenIssues: open.length,
+    JiraHighPriorityIssues: highPriority.length,
+    JiraBugCount: bugs.length,
+    JiraOldestOpenAgeDays: oldestOpenAgeDays != null ? Math.round(oldestOpenAgeDays) : null,
+  };
+}
+
+function aggregateAstroLive(dags) {
+  if (!dags.length) {
+    return { AstroDagCount: null, AstroLastRunState: null, AstroHasImportErrors: null, AstroNextRunAfter: null };
+  }
+  const nextRuns = dags.map((d) => d.next_dagrun_run_after).filter(Boolean).sort();
+  const allRuns = dags.flatMap((d) => d.runs || []).sort((a, b) => new Date(b.start_date) - new Date(a.start_date));
+  return {
+    AstroDagCount: dags.length,
+    AstroLastRunState: allRuns[0]?.state || null,
+    AstroHasImportErrors: dags.some((d) => d.has_import_errors),
+    AstroNextRunAfter: nextRuns[0] || null,
+  };
+}
+
+export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData, openOppCounts, freshdeskData, jiraData, astroData }) {
   const overrideMap = loadOverrideMap();
   const accountsById = new Map((accounts || []).map((a) => [a.Id, a]));
 
@@ -126,6 +168,9 @@ export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData,
   const clientNameById = new Map(
     (snowflakeClients || []).map((c) => [c.clientId, c.displayName || c.clientName])
   );
+  const freshdeskCompanyIdByClientId = new Map(
+    (snowflakeClients || []).map((c) => [c.clientId, c.freshdeskCompanyId])
+  );
 
   const health = keyByClientId(snowflakeData?.health || []);
   const usage = keyByClientId(snowflakeData?.usage || []);
@@ -134,6 +179,12 @@ export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData,
   const commercial = keyByClientId(snowflakeData?.commercial || []);
   const daasRows = snowflakeData?.daas || [];
   const batchRows = snowflakeData?.batch || [];
+
+  const freshdeskTickets = freshdeskData?.tickets || [];
+  const freshdeskCompanies = freshdeskData?.companies || [];
+  const jiraIssues = jiraData?.issues || [];
+  const astroDags = astroData?.dags || [];
+  const astroRunsByDagId = astroData?.runsByDagId || {};
 
   return (accounts || [])
     .filter((a) => isClientTier(a.AccountType_Tier__c))
@@ -147,6 +198,16 @@ export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData,
       const cm = clientId ? commercial.get(clientId) : null;
       const matchName = (clientId && clientNameById.get(clientId)) || a.Name;
       const knownTags = TAGS_BY_ACCOUNT_ID.get(a.Id) || new Set();
+      const freshdeskCompanyId = clientId ? freshdeskCompanyIdByClientId.get(clientId) : null;
+      const externalTags = knownTagsForAccount(a.Id);
+
+      const ticketsForAccount = matchFreshdeskTickets({
+        tickets: freshdeskTickets, companies: freshdeskCompanies, freshdeskCompanyId, matchName,
+      });
+      const issuesForAccount = matchJiraIssues({ issues: jiraIssues, knownTags: externalTags, matchName });
+      const dagsForAccount = matchAstroDags({
+        dags: astroDags, runsByDagId: astroRunsByDagId, knownTags: externalTags, matchName,
+      });
 
       return {
         Id: a.Id,
@@ -187,6 +248,9 @@ export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData,
 
         ...aggregateDaas(knownTags, matchName, daasRows),
         ...aggregateBatch(knownTags, matchName, batchRows),
+        ...aggregateFreshdesk(ticketsForAccount),
+        ...aggregateJira(issuesForAccount),
+        ...aggregateAstroLive(dagsForAccount),
 
         _snowflakeMatchStatus: resolution ? resolution.matchStatus : 'unmatched',
       };

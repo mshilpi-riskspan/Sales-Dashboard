@@ -4,6 +4,9 @@ import { useSalesforceQuery } from '../../hooks/useSalesforceQuery';
 import { useDashboard } from '../../context/DashboardContext';
 import { fetchAllAccounts, fetchOpenOpportunities } from '../../datasources/salesforce';
 import { fetchSnowflakeClients, fetchCurrentClientsSnowflakeData } from '../../datasources/snowflake';
+import { fetchFreshdeskData } from '../../datasources/freshdesk';
+import { fetchJiraData } from '../../datasources/jira';
+import { fetchAstronomerData } from '../../datasources/astronomer';
 import { mergeCurrentClients } from '../../lib/currentClientsMerge';
 import { COLUMN_CATALOG, COLUMN_GROUPS, DEFAULT_VISIBLE_COLUMNS } from './columnCatalog';
 import DataTable from '../../components/common/DataTable';
@@ -153,6 +156,12 @@ export default function CurrentClientsPage() {
   const clientsQ = useSalesforceQuery(fetchSnowflakeClients);
   const snowflakeDataQ = useSalesforceQuery(fetchCurrentClientsSnowflakeData);
   const openOppsQ = useSalesforceQuery(fetchOpenOpportunities);
+  // Best-effort, non-blocking — a Freshdesk/Jira/Astronomer hiccup shouldn't
+  // blank out the whole page; mergeCurrentClients already treats missing
+  // data as "no match" rather than an error.
+  const freshdeskQ = useSalesforceQuery(fetchFreshdeskData);
+  const jiraQ = useSalesforceQuery(fetchJiraData);
+  const astroQ = useSalesforceQuery(fetchAstronomerData);
 
   const loading = accountsQ.loading || clientsQ.loading || snowflakeDataQ.loading || openOppsQ.loading;
   const error = accountsQ.error || clientsQ.error || snowflakeDataQ.error || openOppsQ.error;
@@ -182,8 +191,11 @@ export default function CurrentClientsPage() {
       snowflakeClients: clientsQ.data,
       snowflakeData: snowflakeDataQ.data,
       openOppCounts,
+      freshdeskData: freshdeskQ.data,
+      jiraData: jiraQ.data,
+      astroData: astroQ.data,
     });
-  }, [accountsQ.data, clientsQ.data, snowflakeDataQ.data, openOppCounts]);
+  }, [accountsQ.data, clientsQ.data, snowflakeDataQ.data, openOppCounts, freshdeskQ.data, jiraQ.data, astroQ.data]);
 
   const allTiers = useMemo(() => {
     const s = new Set();

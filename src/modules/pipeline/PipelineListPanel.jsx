@@ -9,7 +9,7 @@ function formatARR(v) {
   return `$${v}`;
 }
 
-export default function PipelineListPanel({ deals, onClose, onDealClick }) {
+export default function PipelineListPanel({ deals, onClose, onDealClick, title = 'Total Pipeline' }) {
   const [sortBy, setSortBy] = useState('arr');
 
   const sorted = useMemo(() => {
@@ -28,7 +28,7 @@ export default function PipelineListPanel({ deals, onClose, onDealClick }) {
     <SlidePanel
       open={!!deals}
       onClose={onClose}
-      title="Total Pipeline"
+      title={title}
       subtitle={`${deals?.length || 0} deals · ${formatARR(totalArr)} ARR`}
       width={560}
     >

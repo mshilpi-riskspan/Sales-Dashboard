@@ -6,6 +6,7 @@ const CLIENT_COLUMNS = [
   'clientId', 'clientName', 'displayName', 'salesforceAccountId',
   'snowflakeClientIdentifier', 'contractTier', 'isActive',
   'impliedIsActive', 'industry', 'segment', 'salesLead',
+  'freshdeskCompanyId', 'jiraProjectKey',
 ];
 
 export async function fetchSnowflakeClients() {
@@ -29,6 +30,21 @@ export async function fetchAccountUsage({ accountId, clientId } = {}) {
     ? `clientId=${encodeURIComponent(clientId)}`
     : `accountId=${encodeURIComponent(accountId)}`;
   const res = await fetch(`/api/snowflake/account-usage?${params}`);
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error || 'Snowflake query failed');
+  return json;
+}
+
+// Daily-grain usage rows for the flexible usage chart on AccountView —
+// { usageDaily, distinctUsersDaily, failures }. Kept separate from
+// fetchAccountUsage() so adjusting the chart's lookback window only
+// refetches this, not the other ~8 unrelated per-account queries.
+export async function fetchAccountUsageChartData({ accountId, clientId, daysBack } = {}) {
+  const params = new URLSearchParams();
+  if (clientId) params.set('clientId', clientId);
+  else if (accountId) params.set('accountId', accountId);
+  if (daysBack) params.set('daysBack', daysBack);
+  const res = await fetch(`/api/snowflake/account-usage-chart?${params}`);
   const json = await res.json();
   if (!res.ok || json.error) throw new Error(json.error || 'Snowflake query failed');
   return json;

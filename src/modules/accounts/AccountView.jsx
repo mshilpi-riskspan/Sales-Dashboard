@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react';
-import { format } from 'date-fns';
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip } from 'recharts';
 import {
   ArrowLeftIcon, MapPinIcon, GlobeAltIcon,
 } from '@heroicons/react/24/outline';
@@ -8,10 +6,31 @@ import {
   fetchAccountDetail, fetchAccountContacts,
   fetchAccountActivities, fetchAccountOpportunities,
 } from '../../datasources/salesforce';
-import { fetchAccountUsage } from '../../datasources/snowflake';
+import { fetchAccountUsage, fetchSnowflakeClients } from '../../datasources/snowflake';
+import { fetchFreshdeskData } from '../../datasources/freshdesk';
+import { fetchJiraData } from '../../datasources/jira';
+import { fetchAstronomerData } from '../../datasources/astronomer';
+import { matchFreshdeskTickets, matchJiraIssues, matchAstroDags, knownTagsForAccount } from '../../lib/externalDataMatch';
 import { findConfirmedClientId } from '../../lib/accountMapping';
 import DealDetailPanel from '../../components/common/DealDetailPanel';
+import PipelineListPanel from '../pipeline/PipelineListPanel';
 import { isClientTier } from '../../config/accountTier';
+import StatTile from './StatTile';
+import SimpleTablePanel from './SimpleTablePanel';
+import UsageCategoryPanel from './UsageCategoryPanel';
+import ContactListPanel from './ContactListPanel';
+import ActivityListPanel from './ActivityListPanel';
+import { TicketListPanel, TicketDetailPanel } from './TicketPanels';
+import { JiraListPanel, JiraDetailPanel } from './JiraPanels';
+import { BatchListPanel, BatchDetailPanel } from './BatchPanels';
+import UsageChart from './UsageChart';
+
+// L3 = Jira project key LVL3 (issue keys like LVL3-1234) — same convention
+// client-health uses to identify escalated support issues, ported here
+// since we already fetch the same unscoped Jira issue set.
+function isL3Issue(issue) {
+  return (issue.fields?.project?.key || '').toUpperCase() === 'LVL3';
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -20,6 +39,29 @@ function formatARR(v) {
   if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
   if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
   return `$${v.toFixed(0)}`;
+}
+
+function formatNum(v) {
+  if (v === null || v === undefined) return '—';
+  return Math.round(v).toLocaleString();
+}
+
+function formatMoney(v) {
+  if (v === null || v === undefined) return '—';
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
+  return `$${Math.round(v)}`;
+}
+
+function formatSignedNum(v) {
+  if (v === null || v === undefined) return '';
+  const rounded = Math.round(v * 10) / 10;
+  return `${rounded >= 0 ? '+' : ''}${rounded.toLocaleString()}`;
+}
+
+function formatSignedMoney(v) {
+  if (v === null || v === undefined) return '';
+  return `${v >= 0 ? '+' : '-'}${formatMoney(Math.abs(v))}`;
 }
 
 function relativeDate(dateStr) {
@@ -46,287 +88,41 @@ function SectionLabel({ children }) {
   );
 }
 
-const STAGE_COLORS = {
-  'Closed Won': 'bg-green-100 text-green-700',
-  'Closed Lost': 'bg-red-100 text-red-600',
-  'Trial': 'bg-amber-100 text-amber-700',
-  'Proposal (Pricing) Delivered': 'bg-blue-100 text-blue-700',
-  'Technical Fit Agreement': 'bg-teal-100 text-rs-teal',
-  'Initial Demo / SQL': 'bg-purple-100 text-purple-700',
-  'Negotiation & Decision Making': 'bg-orange-100 text-orange-700',
-  'Contract Sent for Signature': 'bg-indigo-100 text-indigo-700',
-};
-
-function StageBadge({ stage }) {
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${STAGE_COLORS[stage] || 'bg-slate-100 text-slate-600'}`}>
-      {stage}
-    </span>
-  );
-}
-
-// ── Snowflake product usage (per-account, from functions/api/snowflake/account-usage.js) ──
-
-function formatNum(v) {
-  if (v === null || v === undefined) return '—';
-  return Math.round(v).toLocaleString();
-}
-
-function formatMoney(v) {
-  if (v === null || v === undefined) return '—';
-  if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
-  if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
-  return `$${Math.round(v)}`;
-}
-
-function formatHours(v) {
-  if (v === null || v === undefined) return '—';
-  return `${Math.round(v)}h`;
-}
-
-function pctDelta(current, prev) {
-  if (current === null || prev === null || prev === undefined) return null;
-  if (prev === 0) return current > 0 ? '+100%' : null;
-  const pct = Math.round(((current - prev) / prev) * 100);
-  return `${pct >= 0 ? '+' : ''}${pct}%`;
-}
-
 const HEALTH_STYLES = {
   GREEN: 'bg-green-100 text-green-700',
   YELLOW: 'bg-amber-100 text-amber-700',
   RED: 'bg-red-100 text-red-600',
 };
 
-function StatTile({ label, value, delta, unavailable }) {
-  return (
-    <div className="bg-rs-surface/60 border border-rs-border/50 rounded-lg px-3 py-2">
-      <p className="text-[10px] text-rs-muted mb-0.5">{label}</p>
-      {unavailable ? (
-        <p className="text-xs text-rs-muted italic">Unavailable</p>
-      ) : (
-        <p className="text-sm font-semibold text-rs-text">
-          {value}
-          {delta && <span className="ml-1.5 text-[10px] font-medium text-rs-muted">{delta} vs prior 30d</span>}
-        </p>
-      )}
-    </div>
-  );
-}
+// Column defs for the DaaS/RaaS SimpleTablePanel — same rendering as the
+// markup that used to be always-inline.
+const DAAS_COLUMNS = [
+  { key: 'MODULE', label: 'Module' },
+  { key: 'DATASET_NAME', label: 'Dataset' },
+  {
+    key: 'LOAN_COUNT', label: 'Loans',
+    render: (d) => (<>{formatNum(d.LOAN_COUNT)}{d.LOAN_COUNT_DELTA ? <span className="text-rs-muted ml-1">({formatSignedNum(d.LOAN_COUNT_DELTA)})</span> : null}</>),
+  },
+  {
+    key: 'TOTAL_UPB', label: 'Total UPB',
+    render: (d) => (<>{formatMoney(d.TOTAL_UPB)}{d.UPB_DELTA ? <span className="text-rs-muted ml-1">({formatSignedMoney(d.UPB_DELTA)})</span> : null}</>),
+  },
+  {
+    key: 'DQ_PCT', label: 'DQ %',
+    render: (d) => (<>{d.DQ_PCT != null ? `${d.DQ_PCT.toFixed(1)}%` : '—'}{d.DQ_PCT_DELTA ? <span className="ml-1">({formatSignedNum(d.DQ_PCT_DELTA)}pp)</span> : null}</>),
+  },
+  { key: 'LATEST_DATE', label: 'Latest Date' },
+  {
+    key: 'STATUS', label: 'Status',
+    render: (d) => d.ERROR
+      ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-600" title={d.ERROR}>Error</span>
+      : d.HAS_DATA
+        ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-100 text-green-700">Fresh</span>
+        : <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">No Data</span>,
+  },
+];
 
-function UsageSection({ usageLoading, usage }) {
-  if (usageLoading) {
-    return (
-      <div className="grid grid-cols-3 gap-3">
-        {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
-      </div>
-    );
-  }
-
-  if (!usage?.mapped) {
-    return (
-      <div className="bg-rs-surface border border-dashed border-rs-border rounded-lg p-6 text-center">
-        <p className="text-xs text-rs-muted">No Snowflake usage data mapped for this account — check Account Mapping</p>
-      </div>
-    );
-  }
-
-  const failures = usage.failures || [];
-  const health = usage.health;
-  const riskFactors = Array.isArray(health?.KEY_RISK_FACTORS) ? health.KEY_RISK_FACTORS : [];
-  const usageMetrics = usage.usage;
-  const commercial = usage.commercial;
-  const support = usage.support;
-  const contracts = usage.contracts || [];
-  const trend = (usage.usageTrend || []).map((w) => ({
-    week: w.WEEK ? format(new Date(w.WEEK + 'T00:00:00'), 'MMM d') : '',
-    queries: w.QUERIES || 0,
-    forecasts: w.FORECASTS || 0,
-  }));
-  const servers = usage.usageByServer || [];
-  const distinctUsers = usage.distinctUsers;
-
-  return (
-    <div className="space-y-4">
-      {health && (
-        <div>
-          <div className="flex items-center gap-2 mb-1.5">
-            <span className={`px-2 py-0.5 rounded text-xs font-semibold ${HEALTH_STYLES[health.HEALTH_STATUS] || 'bg-slate-100 text-slate-600'}`}>
-              {health.HEALTH_STATUS || 'Unknown'}
-            </span>
-            <span className="text-sm font-semibold text-rs-text">
-              {health.OVERALL_HEALTH_SCORE != null ? `${health.OVERALL_HEALTH_SCORE} / 100 health score` : 'No health score recorded'}
-            </span>
-          </div>
-          {riskFactors.length > 0 && (
-            <ul className="text-[11px] text-amber-700 list-disc list-inside space-y-0.5 mb-2">
-              {riskFactors.map((f, i) => <li key={i}>{f}</li>)}
-            </ul>
-          )}
-        </div>
-      )}
-
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-rs-muted mb-1.5">Usage (30 days)</p>
-        <div className="grid grid-cols-4 gap-3 mb-2">
-          <StatTile
-            label="API Calls"
-            value={formatNum(usageMetrics?.API_CALLS_30D)}
-            delta={pctDelta(usageMetrics?.API_CALLS_30D, usageMetrics?.API_CALLS_PREV_30D)}
-            unavailable={failures.includes('usage')}
-          />
-          <StatTile
-            label="Forecast Runs"
-            value={formatNum(usageMetrics?.FORECASTS_30D)}
-            delta={pctDelta(usageMetrics?.FORECASTS_30D, usageMetrics?.FORECASTS_PREV_30D)}
-            unavailable={failures.includes('usage')}
-          />
-          <StatTile
-            label="Model Executions"
-            value={formatNum(usageMetrics?.MODEL_EXECUTIONS_30D)}
-            unavailable={failures.includes('usage')}
-          />
-          <StatTile
-            label="Model Failures"
-            value={formatNum(usageMetrics?.MODEL_FAILURES_30D)}
-            unavailable={failures.includes('usage')}
-          />
-          <StatTile
-            label="Scenario Runs"
-            value={formatNum(usageMetrics?.SCENARIO_RUNS_30D)}
-            unavailable={failures.includes('usage')}
-          />
-          <StatTile
-            label="Stress Tests"
-            value={formatNum(usageMetrics?.STRESS_TESTS_30D)}
-            unavailable={failures.includes('usage')}
-          />
-          <StatTile
-            label="Premium Feature Usage"
-            value={formatNum(usageMetrics?.PREMIUM_FEATURE_USAGE_30D)}
-            unavailable={failures.includes('usage')}
-          />
-          <StatTile
-            label="Overrides"
-            value={formatNum(usageMetrics?.OVERRIDES_30D)}
-            unavailable={failures.includes('usage')}
-          />
-          <StatTile
-            label="Forecast Loans"
-            value={formatNum(usageMetrics?.FORECAST_LOANS_30D)}
-            unavailable={failures.includes('usage')}
-          />
-          <StatTile
-            label="Forecast Securities"
-            value={formatNum(usageMetrics?.FORECAST_SECURITIES_30D)}
-            unavailable={failures.includes('usage')}
-          />
-          <StatTile
-            label="Avg API Latency"
-            value={usageMetrics?.AVG_LATENCY_MS_30D != null ? `${Math.round(usageMetrics.AVG_LATENCY_MS_30D)}ms` : '—'}
-            unavailable={failures.includes('usage')}
-          />
-          <StatTile
-            label="Distinct Users"
-            value={formatNum(distinctUsers?.DISTINCT_USERS)}
-            unavailable={failures.includes('distinctUsers')}
-          />
-        </div>
-
-        {(distinctUsers?.USER_RUNS || distinctUsers?.SYSTEM_RUNS) ? (
-          <p className="text-[11px] text-rs-muted mb-2">
-            {formatNum(distinctUsers.USER_DISTINCT_USERS)} end user{distinctUsers.USER_DISTINCT_USERS === 1 ? '' : 's'} ({formatNum(distinctUsers.USER_RUNS)} runs) ·{' '}
-            {formatNum(distinctUsers.SYSTEM_DISTINCT_USERS)} system/admin/batch account{distinctUsers.SYSTEM_DISTINCT_USERS === 1 ? '' : 's'} ({formatNum(distinctUsers.SYSTEM_RUNS)} runs)
-          </p>
-        ) : null}
-
-        {trend.length > 0 && (
-          <div className="mb-2">
-            <p className="text-[10px] text-rs-muted mb-1">Weekly usage, last 90 days</p>
-            <ResponsiveContainer width="100%" height={120}>
-              <LineChart data={trend} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
-                <XAxis dataKey="week" tick={{ fontSize: 10, fill: '#858C9C' }} axisLine={false} tickLine={false} />
-                <YAxis hide />
-                <Tooltip
-                  contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #DADEE5' }}
-                  formatter={(v, name) => [v, name === 'queries' ? 'API Calls' : 'Forecast Runs']}
-                />
-                <Line type="monotone" dataKey="queries" stroke="#0C8EA3" strokeWidth={2} dot={false} name="queries" />
-                <Line type="monotone" dataKey="forecasts" stroke="#FFA91D" strokeWidth={2} dot={false} name="forecasts" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-
-        {servers.length > 0 && (
-          <div>
-            <p className="text-[10px] text-rs-muted mb-1">Forecast runs by server (30 days)</p>
-            <div className="flex flex-wrap gap-2">
-              {servers.map((s) => (
-                <span key={s.SERVER_NAME} className="text-[11px] bg-rs-surface border border-rs-border/50 rounded-full px-2 py-0.5">
-                  {s.SERVER_NAME}: <span className="font-semibold text-rs-text">{formatNum(s.RUN_COUNT)}</span>
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-rs-muted mb-1.5">Support</p>
-        <div className="grid grid-cols-4 gap-3">
-          <StatTile label="Open Tickets" value={formatNum(support?.OPEN_TICKETS)} unavailable={failures.includes('support')} />
-          <StatTile label="New Tickets" value={formatNum(support?.NEW_TICKETS)} unavailable={failures.includes('support')} />
-          <StatTile label="Resolved" value={formatNum(support?.RESOLVED_TICKETS)} unavailable={failures.includes('support')} />
-          <StatTile label="Reopened" value={formatNum(support?.REOPENED_TICKETS)} unavailable={failures.includes('support')} />
-          <StatTile label="Escalated" value={formatNum(support?.ESCALATED_TICKETS)} unavailable={failures.includes('support')} />
-          <StatTile label="Critical" value={formatNum(support?.CRITICAL_TICKETS)} unavailable={failures.includes('support')} />
-          <StatTile label="High Priority" value={formatNum(support?.HIGH_PRIORITY_TICKETS)} unavailable={failures.includes('support')} />
-          <StatTile label="Avg First Response" value={formatHours(support?.AVG_FIRST_RESPONSE_HOURS)} unavailable={failures.includes('support')} />
-        </div>
-      </div>
-
-      <div>
-        <p className="text-[10px] font-semibold uppercase tracking-wide text-rs-muted mb-1.5">Billing (Maxio) — separate from Salesforce ARR above</p>
-        <div className="grid grid-cols-4 gap-3 mb-2">
-          <StatTile label="ARR" value={formatMoney(commercial?.ARR)} unavailable={failures.includes('commercial')} />
-          <StatTile label="MRR" value={formatMoney(commercial?.MRR)} unavailable={failures.includes('commercial')} />
-          <StatTile label="Contract Value" value={formatMoney(commercial?.CONTRACT_VALUE)} unavailable={failures.includes('commercial')} />
-          <StatTile label="Days to Renewal" value={formatNum(commercial?.DAYS_TO_RENEWAL)} unavailable={failures.includes('commercial')} />
-          <StatTile label="Active Contracts" value={formatNum(commercial?.ACTIVE_CONTRACTS)} unavailable={failures.includes('commercial')} />
-          <StatTile label="Open Invoices" value={formatNum(commercial?.OPEN_INVOICE_COUNT)} unavailable={failures.includes('commercial')} />
-          <StatTile label="Expansion Opps" value={formatNum(commercial?.EXPANSION_OPPORTUNITIES)} unavailable={failures.includes('commercial')} />
-          <StatTile label="Expansion Pipeline" value={formatMoney(commercial?.EXPANSION_PIPELINE_VALUE)} unavailable={failures.includes('commercial')} />
-        </div>
-        {contracts.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs border-collapse">
-              <thead>
-                <tr>
-                  {['Contract #', 'Start', 'End', 'Value', 'Active'].map((h) => (
-                    <th key={h} className="text-left text-[10px] font-semibold text-rs-muted uppercase tracking-wide pb-1">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {contracts.map((c, i) => (
-                  <tr key={i} className="border-t border-rs-border/50">
-                    <td className="py-1 text-rs-text">{c.CONTRACT_NUMBER || '—'}</td>
-                    <td className="py-1 text-rs-muted">{c.EARLIEST_START_DATE || '—'}</td>
-                    <td className="py-1 text-rs-muted">{c.LATEST_END_DATE || '—'}</td>
-                    <td className="py-1 text-rs-text">{formatMoney(c.TOTAL_CONTRACT_VALUE)}</td>
-                    <td className="py-1 text-rs-muted">{c.IS_ACTIVE ? 'Yes' : 'No'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Copy of cadence/activity logic from DealDetailPanel (per plan: copy, don't refactor shared component)
+// Copy of cadence logic from DealDetailPanel (per plan: copy, don't refactor shared component)
 function computeCadence(activities) {
   const { tasks = [], events = [] } = activities || {};
   const all = [
@@ -351,207 +147,6 @@ function CadenceBar({ label, count, total }) {
   );
 }
 
-// ── Rich activity feed (copied from DealDetailPanel per plan) ────────────────
-
-function parseActivityBody(description, type) {
-  if (!description) return { body: null, meta: null, isEmail: false };
-  const raw = description.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
-  const isEmail = type === 'Email' || /^To:\s|Body:\s/.test(raw);
-  if (isEmail) {
-    const toMatch = raw.match(/^To:\s*([^\n]+?)(?:\s+CC:|$)/m);
-    const bodyMatch = raw.match(/Body:\s*([\s\S]*?)(?:\n(?:From:|Sent:|[-_]{10,})|\s*$)/);
-    let body = bodyMatch ? bodyMatch[1].trim() : null;
-    if (body) {
-      body = body.replace(/^External Email:.*?(?=\n\n|\n[A-Z]|[A-Z][a-z]{2,}\s+\/)/s, '').trim();
-      body = body.replace(/\n[-_]{3,}[\s\S]*/m, '').trim();
-    }
-    const to = toMatch ? toMatch[1].replace(/;/g, ' ·').trim() : null;
-    return { body: body || null, meta: { to }, isEmail: true };
-  }
-  const replyIdx = raw.search(/\n[-_]{10,}|\nFrom:\s[A-Z]/);
-  const body = replyIdx > 0 ? raw.slice(0, replyIdx).trim() : raw;
-  return { body, meta: null, isEmail: false };
-}
-
-const INTENT_META = {
-  Outreach:    { label: 'Outreach',   color: 'bg-amber-50 text-amber-700' },
-  Intro:       { label: 'Intro',      color: 'bg-blue-50 text-blue-600' },
-  'Follow-up': { label: 'Follow-up',  color: 'bg-orange-50 text-orange-600' },
-  Meeting:     { label: 'Meeting',    color: 'bg-green-50 text-green-700' },
-  Reply:       { label: 'Reply',      color: 'bg-rs-surface text-rs-muted' },
-};
-
-function getIntentTag(subject) {
-  if (!subject) return null;
-  const s = subject.toLowerCase();
-  if (/^re:/i.test(subject)) return 'Reply';
-  if (s.includes('outreach') || s.includes('reaching out')) return 'Outreach';
-  if (s.includes('intro') || s.includes('introduction')) return 'Intro';
-  if (s.includes('follow up') || s.includes('follow-up') || s.includes('followup') || s.includes('checking in')) return 'Follow-up';
-  if (s.includes('meeting') || s.includes('demo') || s.includes('sync') || s.includes('connect') || /\bcall\b/.test(s)) return 'Meeting';
-  return null;
-}
-
-function getBaseSubject(subject) {
-  if (!subject) return '';
-  return subject.replace(/^(re:|re:\s*re:|fw:|fwd:)\s*/gi, '').trim();
-}
-
-const TYPE_META = {
-  Email:           { label: 'Email',   color: 'bg-purple-50 text-purple-600' },
-  Call:            { label: 'Call',    color: 'bg-rs-teal/10 text-rs-teal' },
-  Meeting:         { label: 'Meeting', color: 'bg-green-50 text-green-700' },
-  Virtual_Meeting: { label: 'Virtual', color: 'bg-green-50 text-green-700' },
-  VIRTUAL_MEETING: { label: 'Virtual', color: 'bg-green-50 text-green-700' },
-  Task:            { label: 'Task',    color: 'bg-rs-surface text-rs-muted' },
-  Event:           { label: 'Event',   color: 'bg-orange-50 text-orange-600' },
-};
-
-function TypeBadge({ type }) {
-  const meta = TYPE_META[type] || { label: type?.slice(0, 8) || '—', color: 'bg-rs-surface text-rs-muted' };
-  return (
-    <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wide leading-none ${meta.color}`}>
-      {meta.label}
-    </span>
-  );
-}
-
-function RichActivityItem({ activity, compact = false, prevOwner = null }) {
-  const [expanded, setExpanded] = useState(false);
-  const date = activity.ActivityDate || activity.StartDateTime;
-  const type = activity.Type || (activity._type === 'event' ? 'Event' : 'Task');
-  const { body, meta, isEmail } = parseActivityBody(activity.Description, type);
-  const isLong = body && body.length > 160;
-  const intent = type === 'Email' ? getIntentTag(activity.Subject) : null;
-  const intentMeta = intent ? INTENT_META[intent] : null;
-  const ownerChanged = activity.Owner?.Name && activity.Owner.Name !== prevOwner;
-
-  if (compact) {
-    return (
-      <div className="py-2 border-b border-rs-border/30 last:border-0">
-        <p className="text-[10px] text-rs-muted mb-1">
-          {date ? format(new Date(date), 'MMM d, yyyy') : '—'}
-          {ownerChanged && activity.Owner?.Name ? ` · ${activity.Owner.Name}` : ''}
-        </p>
-        {isEmail && meta?.to && (
-          <p className="text-[10px] text-rs-muted mb-1 truncate"><span className="font-medium">To:</span> {meta.to}</p>
-        )}
-        {body ? (
-          <div className="bg-rs-surface rounded-md px-2.5 py-2">
-            <p className="text-[11px] text-rs-text leading-relaxed whitespace-pre-line">
-              {expanded || !isLong ? body : `${body.slice(0, 160)}…`}
-            </p>
-            {isLong && (
-              <button onClick={() => setExpanded(e => !e)} className="text-[10px] text-rs-teal hover:underline mt-1">
-                {expanded ? 'Show less' : 'Show more'}
-              </button>
-            )}
-          </div>
-        ) : <p className="text-[11px] text-rs-muted italic">No content</p>}
-      </div>
-    );
-  }
-
-  return (
-    <div className="py-2.5 border-b border-rs-border/50 last:border-0">
-      <div className="flex items-start justify-between gap-2 mb-0.5">
-        <p className="text-xs font-medium text-rs-text leading-snug flex-1 min-w-0">{activity.Subject || '—'}</p>
-        <div className="flex items-center gap-1 shrink-0">
-          <TypeBadge type={type} />
-          {intentMeta && (
-            <span className={`inline-block px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase tracking-wide leading-none ${intentMeta.color}`}>
-              {intentMeta.label}
-            </span>
-          )}
-        </div>
-      </div>
-      <p className="text-[10px] text-rs-muted mb-1.5">
-        {date ? format(new Date(date), 'MMM d, yyyy') : '—'}
-        {activity.Owner?.Name ? ` · ${activity.Owner.Name}` : ''}
-      </p>
-      {isEmail && meta?.to && (
-        <p className="text-[10px] text-rs-muted mb-1 truncate"><span className="font-medium">To:</span> {meta.to}</p>
-      )}
-      {body && (
-        <div className={isEmail ? 'bg-rs-surface rounded-md px-2.5 py-2 mt-1' : ''}>
-          <p className="text-[11px] text-rs-text leading-relaxed whitespace-pre-line">
-            {expanded || !isLong ? body : `${body.slice(0, 160)}…`}
-          </p>
-          {isLong && (
-            <button onClick={() => setExpanded(e => !e)} className="text-[10px] text-rs-teal hover:underline mt-1">
-              {expanded ? 'Show less' : 'Show more'}
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ActivityThread({ emails }) {
-  const [open, setOpen] = useState(false);
-  const first = emails[0];
-  const last = emails[emails.length - 1];
-  const baseSubject = getBaseSubject(first.Subject);
-  const earliest = new Date(first.ActivityDate || first.CreatedDate || 0);
-  const latest = new Date(last.ActivityDate || last.CreatedDate || 0);
-  const sameDay = earliest.toDateString() === latest.toDateString();
-  const dateRange = sameDay
-    ? format(latest, 'MMM d, yyyy')
-    : `${format(earliest, 'MMM d')} – ${format(latest, 'MMM d, yyyy')}`;
-
-  return (
-    <div className="border-b border-rs-border/50 last:border-0">
-      <button
-        onClick={() => setOpen(o => !o)}
-        className="w-full text-left py-2.5 flex items-start gap-2 hover:bg-rs-surface/50 rounded transition-colors"
-      >
-        <span className="text-rs-muted text-[10px] mt-0.5 shrink-0">{open ? '▼' : '▶'}</span>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-            <p className="text-xs font-medium text-rs-text leading-snug">{baseSubject || first.Subject || '—'}</p>
-            <span className="text-[10px] bg-purple-50 text-purple-600 px-1.5 py-0.5 rounded font-semibold leading-none uppercase tracking-wide">
-              {emails.length} emails
-            </span>
-          </div>
-          <p className="text-[10px] text-rs-muted">{dateRange}</p>
-        </div>
-      </button>
-      {open && (
-        <div className="pl-4 pb-2">
-          {emails.map((e, i) => (
-            <RichActivityItem key={e.Id || i} activity={e} compact prevOwner={i > 0 ? emails[i - 1].Owner?.Name : null} />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function groupActivities(activities) {
-  const emailGroups = new Map();
-  const standalone = [];
-  for (const a of activities) {
-    if (a.Type === 'Email') {
-      const base = getBaseSubject(a.Subject).toLowerCase();
-      if (!emailGroups.has(base)) emailGroups.set(base, []);
-      emailGroups.get(base).push(a);
-    } else {
-      standalone.push({ type: 'single', item: a, date: new Date(a.ActivityDate || a.StartDateTime || a.CreatedDate || 0) });
-    }
-  }
-  const threads = [];
-  for (const [, emails] of emailGroups) {
-    emails.sort((a, b) => new Date(a.ActivityDate || a.CreatedDate || 0) - new Date(b.ActivityDate || b.CreatedDate || 0));
-    threads.push({
-      type: emails.length > 1 ? 'thread' : 'single',
-      item: emails.length > 1 ? emails : emails[0],
-      date: new Date(emails[emails.length - 1].ActivityDate || emails[emails.length - 1].CreatedDate || 0),
-    });
-  }
-  return [...threads, ...standalone].sort((a, b) => b.date - a.date);
-}
-
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function AccountView({ accountId, onBack }) {
@@ -560,9 +155,21 @@ export default function AccountView({ accountId, onBack }) {
   const [activities, setActivities] = useState(null);
   const [opps, setOpps] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [activeDeal, setActiveDeal] = useState(null);
   const [usage, setUsage] = useState(null);
   const [usageLoading, setUsageLoading] = useState(true);
+  const [externalData, setExternalData] = useState({ tickets: [], issues: [], dags: [] });
+  const [externalDataLoading, setExternalDataLoading] = useState(true);
+
+  // Drill-down state — `openPanel` drives whichever LIST-level panel is
+  // open (mutually exclusive by construction, matching SlidePanel's own
+  // one-at-a-time design); the four `active*` vars hold a single record
+  // drilled into from a list, one level deeper.
+  const [openPanel, setOpenPanel] = useState(null); // { type: 'deals'|'contacts'|'activity'|'usage'|'datasets'|'tickets'|'issues'|'l3'|'liveDags' }
+  const [activeDeal, setActiveDeal] = useState(null);
+  const [activeTicket, setActiveTicket] = useState(null);
+  const [activeIssue, setActiveIssue] = useState(null);
+  const [activeL3Issue, setActiveL3Issue] = useState(null);
+  const [activeDag, setActiveDag] = useState(null);
 
   useEffect(() => {
     setLoading(true);
@@ -596,6 +203,38 @@ export default function AccountView({ accountId, onBack }) {
       .finally(() => setUsageLoading(false));
   }, [accountId]);
 
+  // Independent of both fetches above — reuses the same bulk Freshdesk/Jira/
+  // Astronomer fetches the Current Clients page uses (5-min cached, so this
+  // isn't a new per-account network cost) and filters to just this account.
+  useEffect(() => {
+    setExternalDataLoading(true);
+    setExternalData({ tickets: [], issues: [], dags: [] });
+    Promise.all([
+      fetchSnowflakeClients(),
+      fetchFreshdeskData(),
+      fetchJiraData(),
+      fetchAstronomerData(),
+    ]).then(([snowflakeClients, freshdeskData, jiraData, astroData]) => {
+      const overrideClientId = findConfirmedClientId(accountId);
+      const directClient = snowflakeClients.find((c) => c.salesforceAccountId === accountId);
+      const clientId = overrideClientId || directClient?.clientId || null;
+      const clientRecord = clientId ? snowflakeClients.find((c) => c.clientId === clientId) : null;
+      const matchName = clientRecord?.displayName || clientRecord?.clientName || null;
+      const knownTags = knownTagsForAccount(accountId);
+
+      setExternalData({
+        tickets: matchFreshdeskTickets({
+          tickets: freshdeskData.tickets, companies: freshdeskData.companies,
+          freshdeskCompanyId: clientRecord?.freshdeskCompanyId, matchName,
+        }),
+        issues: matchJiraIssues({ issues: jiraData.issues, knownTags, matchName }),
+        dags: matchAstroDags({ dags: astroData.dags, runsByDagId: astroData.runsByDagId, knownTags, matchName }),
+      });
+    })
+      .catch(() => setExternalData({ tickets: [], issues: [], dags: [] }))
+      .finally(() => setExternalDataLoading(false));
+  }, [accountId]);
+
   const cadence = computeCadence(activities);
   const allActivities = [
     ...(activities?.tasks || []).map(t => ({ ...t, _type: 'task' })),
@@ -608,7 +247,6 @@ export default function AccountView({ accountId, onBack }) {
 
   const openOpps = (opps || []).filter(o => !o.IsClosed);
   const wonOpps = (opps || []).filter(o => o.IsWon);
-  const openARR = openOpps.reduce((s, o) => s + (o.Annual_Recurring_Revenue_ARR__c || 0), 0);
   const wonARR = wonOpps.reduce((s, o) => s + (o.Annual_Recurring_Revenue_ARR__c || 0), 0);
 
   // Derive last activity from fetched activities (more reliable than SF's LastActivityDate rollup)
@@ -619,6 +257,10 @@ export default function AccountView({ accountId, onBack }) {
     : null;
 
   const clientStatus = isClientTier(account?.AccountType_Tier__c) ? 'Client' : 'Prospect';
+
+  const usageMetrics = usage?.usage;
+  const distinctUsers = usage?.distinctUsers;
+  const l3Issues = externalData.issues.filter(isL3Issue);
 
   return (
     // -m-6 bleeds outside PageShell's p-6 so the navy header extends edge-to-edge
@@ -656,6 +298,12 @@ export default function AccountView({ accountId, onBack }) {
                   ARR {formatARR(account.Current_ARR__c)}
                 </span>
               )}
+              {usage?.health?.HEALTH_STATUS && (
+                <span className={`mt-0.5 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${HEALTH_STYLES[usage.health.HEALTH_STATUS] || 'bg-slate-100 text-slate-600'}`}>
+                  {usage.health.HEALTH_STATUS} Health
+                  {usage.health.OVERALL_HEALTH_SCORE != null ? ` · ${usage.health.OVERALL_HEALTH_SCORE}/100` : ''}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-3 mt-2 text-white/50 text-xs flex-wrap">
@@ -681,191 +329,301 @@ export default function AccountView({ accountId, onBack }) {
                 <span>Sales Lead: {account.Sales_Lead__r.Name}</span>
               )}
             </div>
+
+            {usage?.health?.KEY_RISK_FACTORS?.length > 0 && (
+              <ul className="text-[11px] text-amber-200 list-disc list-inside space-y-0.5 mt-2">
+                {usage.health.KEY_RISK_FACTORS.map((f, i) => <li key={i}>{f}</li>)}
+              </ul>
+            )}
           </>
         )}
       </div>
 
       {/* ── Sections ───────────────────────────────────────────────────────── */}
-      <div className="p-6 space-y-8">
+      {/* Main column: the operational snapshot (deals/usage/support/billing/
+          dev/batch) — what's actually happening at the company right now.
+          Sidebar: softer relationship context (account plan, contacts,
+          engagement cadence) — still one click away, just de-prioritized. */}
+      <div className="p-6 grid grid-cols-3 gap-6">
+        <div className="col-span-2 space-y-8">
 
-        {/* Relationship & Delivery */}
-        <section>
-          <SectionLabel>Relationship &amp; Delivery</SectionLabel>
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            {[
-              { label: 'Current ARR', value: loading ? null : formatARR(account?.Current_ARR__c) },
-              { label: 'Open Deals', value: loading ? null : (opps ? openOpps.length : '—') },
-              { label: 'Last Activity', value: (loading || activities === null) ? null : (lastActivityDate ? relativeDate(lastActivityDate) : '—') },
-            ].map(({ label, value }) => (
-              <div key={label} className="bg-rs-surface rounded-lg p-3">
-                <p className="text-[10px] uppercase tracking-widest text-rs-muted">{label}</p>
-                {value === null
-                  ? <Skeleton className="h-6 w-16 mt-1" />
-                  : <p className="text-lg font-semibold text-rs-text mt-0.5">{value}</p>
-                }
+          {/* Relationship & Delivery */}
+          <section>
+            <SectionLabel>Relationship &amp; Delivery</SectionLabel>
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div className="bg-rs-surface rounded-lg p-3">
+                <p className="text-[10px] uppercase tracking-widest text-rs-muted">Current ARR</p>
+                {loading ? <Skeleton className="h-6 w-16 mt-1" /> : <p className="text-lg font-semibold text-rs-text mt-0.5">{formatARR(account?.Current_ARR__c)}</p>}
               </div>
-            ))}
-          </div>
-
-          {/* Active deals table */}
-          {!loading && openOpps.length > 0 && (
-            <div className="border border-rs-border rounded-lg overflow-hidden mb-3">
-              <div className="bg-rs-surface px-3 py-2 border-b border-rs-border flex items-center justify-between">
-                <p className="text-xs font-semibold text-rs-text">Active Deals</p>
-                <p className="text-xs text-rs-muted">{formatARR(openARR)} pipeline</p>
-              </div>
-              {openOpps.map(opp => (
-                <button
-                  key={opp.Id}
-                  onClick={() => setActiveDeal(opp)}
-                  className="w-full flex items-center justify-between px-3 py-2.5 hover:bg-rs-surface/60 border-b border-rs-border/50 last:border-0 text-left transition-colors"
-                >
-                  <div className="flex items-center gap-3 min-w-0 flex-1">
-                    <StageBadge stage={opp.StageName} />
-                    <span className="text-xs text-rs-text truncate">{opp.Name}</span>
-                  </div>
-                  <div className="text-xs text-rs-muted shrink-0 ml-2 text-right">
-                    <span>{formatARR(opp.Annual_Recurring_Revenue_ARR__c)}</span>
-                    {opp.CloseDate && <span className="ml-2">{opp.CloseDate}</span>}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {/* Historical */}
-          {!loading && wonOpps.length > 0 && (
-            <p className="text-xs text-rs-muted">
-              {wonOpps.length} closed-won deal{wonOpps.length !== 1 ? 's' : ''}, {formatARR(wonARR)} total ARR won
-              {/* TODO: Extend with SKU/module data once Salesforce/Maxio product-per-SKU alignment lands */}
-            </p>
-          )}
-        </section>
-
-        {/* Account Plan */}
-        <section>
-          <SectionLabel>Account Plan</SectionLabel>
-          {loading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-3/4" />
-              <Skeleton className="h-4 w-1/2" />
-            </div>
-          ) : (!account?.Sales_Next_Steps__c && !account?.Existing_Connections__c) ? (
-            <div className="bg-rs-surface rounded-lg p-4 text-xs text-rs-muted">
-              No account plan recorded in Salesforce.{' '}
-              <span className="text-rs-text font-medium">
-                Expected fields: Sales_Next_Steps__c, Existing_Connections__c
-              </span>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {account?.Sales_Next_Steps__c && (
-                <div>
-                  <p className="text-[10px] uppercase tracking-widest text-rs-muted mb-1">Next Steps</p>
-                  <p className="text-sm text-rs-text whitespace-pre-wrap leading-relaxed">
-                    {account.Sales_Next_Steps__c}
-                  </p>
+              {loading ? (
+                <div className="bg-rs-surface rounded-lg p-3">
+                  <p className="text-[10px] uppercase tracking-widest text-rs-muted">Open Deals</p>
+                  <Skeleton className="h-6 w-16 mt-1" />
                 </div>
-              )}
-              {account?.Existing_Connections__c && (
-                <div>
-                  <p className="text-[10px] uppercase tracking-widest text-rs-muted mb-1">Existing Connections</p>
-                  <p className="text-sm text-rs-text whitespace-pre-wrap leading-relaxed">
-                    {account.Existing_Connections__c}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        {/* Key Contacts */}
-        <section>
-          <SectionLabel>Key Contacts</SectionLabel>
-          {loading ? (
-            <div className="space-y-2">
-              {[1, 2].map(i => <Skeleton key={i} className="h-12 w-full" />)}
-            </div>
-          ) : (contacts || []).length === 0 ? (
-            <p className="text-xs text-rs-muted">No contacts found in Salesforce for this account.</p>
-          ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {contacts.map(c => {
-                const name = [c.FirstName, c.LastName].filter(Boolean).join(' ') || '—';
-                const initials = [c.FirstName?.[0], c.LastName?.[0]].filter(Boolean).join('').toUpperCase();
-                return (
-                  <div key={c.Id} className="flex items-center gap-3 p-2.5 rounded-lg bg-rs-surface/50 border border-rs-border/30">
-                    <div className="w-8 h-8 rounded-full bg-rs-navy flex items-center justify-center text-white text-xs font-semibold shrink-0">
-                      {initials || '?'}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium text-rs-text">{name}</p>
-                      {c.Title && <p className="text-[10px] text-rs-muted truncate">{c.Title}</p>}
-                      {c.Email && (
-                        <a href={`mailto:${c.Email}`} className="text-[10px] text-rs-teal hover:underline block truncate">
-                          {c.Email}
-                        </a>
-                      )}
-                      {c.Phone && (
-                        <a href={`tel:${c.Phone}`} className="text-[10px] text-rs-muted hover:text-rs-teal hover:underline block truncate transition-colors">
-                          {c.Phone}
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-          {/* TODO: wire async web-lookup enrichment for CEO/CRO auto-enrichment */}
-          <div className="mt-3 p-3 rounded-lg bg-rs-surface border border-dashed border-rs-border text-xs text-rs-muted">
-            CEO / CRO auto-enrichment coming soon — will auto-update from public sources
-          </div>
-        </section>
-
-        {/* Activity & Engagement */}
-        <section>
-          <SectionLabel>Activity &amp; Engagement</SectionLabel>
-          {loading ? (
-            <div className="space-y-2">
-              {[1, 2, 3].map(i => <Skeleton key={i} className="h-3 w-full" />)}
-            </div>
-          ) : (
-            <>
-              <div className="space-y-1.5 mb-4">
-                <CadenceBar label="7 days" count={cadence.last7} total={Math.max(cadence.last365, 1)} />
-                <CadenceBar label="90 days" count={cadence.last90} total={Math.max(cadence.last365, 1)} />
-                <CadenceBar label="1 year" count={cadence.last365} total={Math.max(cadence.last365, 1)} />
-              </div>
-              {allActivities.length === 0 ? (
-                <p className="text-xs text-rs-muted">No activity recorded this year.</p>
               ) : (
-                <div>
-                  {groupActivities(allActivities).map((entry, i) =>
-                    entry.type === 'thread' ? (
-                      <ActivityThread key={i} emails={entry.item} />
-                    ) : (
-                      <RichActivityItem key={entry.item?.Id || i} activity={entry.item} />
-                    )
-                  )}
-                </div>
+                <StatTile label="Open Deals" value={openOpps.length} onClick={openOpps.length > 0 ? () => setOpenPanel({ type: 'deals' }) : undefined} />
               )}
-            </>
-          )}
-        </section>
+              <div className="bg-rs-surface rounded-lg p-3">
+                <p className="text-[10px] uppercase tracking-widest text-rs-muted">Last Activity</p>
+                {(loading || activities === null)
+                  ? <Skeleton className="h-6 w-16 mt-1" />
+                  : <p className="text-lg font-semibold text-rs-text mt-0.5">{lastActivityDate ? relativeDate(lastActivityDate) : '—'}</p>}
+              </div>
+            </div>
 
-        {/* Product Usage & Health (Snowflake) */}
-        <section>
-          <SectionLabel>Product Usage &amp; Health (Snowflake)</SectionLabel>
-          <UsageSection usageLoading={usageLoading} usage={usage} />
-        </section>
+            {!loading && wonOpps.length > 0 && (
+              <p className="text-xs text-rs-muted">
+                {wonOpps.length} closed-won deal{wonOpps.length !== 1 ? 's' : ''}, {formatARR(wonARR)} total ARR won
+              </p>
+            )}
+          </section>
+
+          {/* Product Usage (Snowflake) */}
+          <section>
+            <SectionLabel>Product Usage (Snowflake)</SectionLabel>
+            {usageLoading ? (
+              <div className="grid grid-cols-3 gap-3">
+                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+              </div>
+            ) : !usage?.mapped ? (
+              <div className="bg-rs-surface border border-dashed border-rs-border rounded-lg p-6 text-center">
+                <p className="text-xs text-rs-muted">No Snowflake usage data mapped for this account — check Account Mapping</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                <StatTile
+                  label="API Calls (30d)"
+                  value={formatNum(usageMetrics?.API_CALLS_30D)}
+                  onClick={() => setOpenPanel({ type: 'usage' })}
+                />
+                <StatTile
+                  label="Forecast Runs (30d)"
+                  value={formatNum(usageMetrics?.FORECASTS_30D)}
+                  onClick={() => setOpenPanel({ type: 'usage' })}
+                />
+                <StatTile
+                  label="Distinct Users (30d)"
+                  value={formatNum(distinctUsers?.DISTINCT_USERS)}
+                  onClick={() => setOpenPanel({ type: 'usage' })}
+                />
+                <StatTile
+                  label="Model Executions (30d)"
+                  value={formatNum(usageMetrics?.MODEL_EXECUTIONS_30D)}
+                  onClick={() => setOpenPanel({ type: 'usage' })}
+                />
+                <StatTile
+                  label="Avg API Latency (30d)"
+                  value={usageMetrics?.AVG_LATENCY_MS_30D != null ? `${Math.round(usageMetrics.AVG_LATENCY_MS_30D)}ms` : '—'}
+                  onClick={() => setOpenPanel({ type: 'usage' })}
+                />
+                <StatTile
+                  label="DaaS / RaaS Datasets"
+                  value={(usage.datasets || []).length}
+                  onClick={(usage.datasets || []).length > 0 ? () => setOpenPanel({ type: 'datasets' }) : undefined}
+                />
+              </div>
+            )}
+          </section>
+
+          {/* Support, Dev & Live Batch Status (Freshdesk / Jira / Astronomer) */}
+          <section>
+            <SectionLabel>Support, Dev &amp; Live Batch Status</SectionLabel>
+            {externalDataLoading ? (
+              <div className="grid grid-cols-4 gap-3">
+                {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+              </div>
+            ) : (
+              <div className="grid grid-cols-4 gap-3">
+                <StatTile
+                  label="Open Tickets (Freshdesk)"
+                  value={externalData.tickets.length}
+                  onClick={externalData.tickets.length > 0 ? () => setOpenPanel({ type: 'tickets' }) : undefined}
+                />
+                <StatTile
+                  label="Jira Issues"
+                  value={externalData.issues.length}
+                  onClick={externalData.issues.length > 0 ? () => setOpenPanel({ type: 'issues' }) : undefined}
+                />
+                <StatTile
+                  label="L3 Tickets"
+                  value={l3Issues.length}
+                  onClick={l3Issues.length > 0 ? () => setOpenPanel({ type: 'l3' }) : undefined}
+                />
+                <StatTile
+                  label="Live DAGs (Astronomer)"
+                  value={externalData.dags.length}
+                  onClick={externalData.dags.length > 0 ? () => setOpenPanel({ type: 'liveDags' }) : undefined}
+                />
+              </div>
+            )}
+          </section>
+
+          {/* Usage Trends — same flexible chart as the Usage drill-down, given
+              room to breathe here since it has no natural drill-down further */}
+          <section>
+            <SectionLabel>Usage Trends</SectionLabel>
+            {usage?.mapped && (
+              <UsageChart accountId={accountId} clientId={usage?.clientId} />
+            )}
+          </section>
+        </div>
+
+        {/* Sidebar */}
+        <div className="col-span-1 space-y-8">
+
+          {/* Account Plan */}
+          <section>
+            <SectionLabel>Account Plan</SectionLabel>
+            {loading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-4 w-1/2" />
+              </div>
+            ) : (!account?.Sales_Next_Steps__c && !account?.Existing_Connections__c) ? (
+              <div className="bg-rs-surface rounded-lg p-4 text-xs text-rs-muted">
+                No account plan recorded in Salesforce.{' '}
+                <span className="text-rs-text font-medium">
+                  Expected fields: Sales_Next_Steps__c, Existing_Connections__c
+                </span>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {account?.Sales_Next_Steps__c && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-rs-muted mb-1">Next Steps</p>
+                    <p className="text-sm text-rs-text whitespace-pre-wrap leading-relaxed">
+                      {account.Sales_Next_Steps__c}
+                    </p>
+                  </div>
+                )}
+                {account?.Existing_Connections__c && (
+                  <div>
+                    <p className="text-[10px] uppercase tracking-widest text-rs-muted mb-1">Existing Connections</p>
+                    <p className="text-sm text-rs-text whitespace-pre-wrap leading-relaxed">
+                      {account.Existing_Connections__c}
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </section>
+
+          {/* Key Contacts */}
+          <section>
+            <SectionLabel>Key Contacts</SectionLabel>
+            {loading ? (
+              <Skeleton className="h-14 w-full" />
+            ) : (
+              <StatTile
+                label="Contacts"
+                value={(contacts || []).length}
+                onClick={(contacts || []).length > 0 ? () => setOpenPanel({ type: 'contacts' }) : undefined}
+              />
+            )}
+          </section>
+
+          {/* Activity & Engagement */}
+          <section>
+            <SectionLabel>Activity &amp; Engagement</SectionLabel>
+            {loading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map(i => <Skeleton key={i} className="h-3 w-full" />)}
+              </div>
+            ) : (
+              <>
+                <div className="space-y-1.5 mb-4">
+                  <CadenceBar label="7 days" count={cadence.last7} total={Math.max(cadence.last365, 1)} />
+                  <CadenceBar label="90 days" count={cadence.last90} total={Math.max(cadence.last365, 1)} />
+                  <CadenceBar label="1 year" count={cadence.last365} total={Math.max(cadence.last365, 1)} />
+                </div>
+                <StatTile
+                  label="Activity (1yr)"
+                  value={allActivities.length}
+                  onClick={allActivities.length > 0 ? () => setOpenPanel({ type: 'activity' }) : undefined}
+                />
+              </>
+            )}
+          </section>
+        </div>
       </div>
 
-      {/* Deal detail panel */}
+      {/* ── List-level panels — mutually exclusive via openPanel ────────────── */}
+      <PipelineListPanel
+        deals={openPanel?.type === 'deals' ? openOpps : null}
+        title="Open Deals"
+        onClose={() => setOpenPanel(null)}
+        onDealClick={(deal) => { setOpenPanel(null); setActiveDeal(deal); }}
+      />
+      <ContactListPanel
+        contacts={openPanel?.type === 'contacts' ? contacts : null}
+        onClose={() => setOpenPanel(null)}
+      />
+      <ActivityListPanel
+        activities={openPanel?.type === 'activity' ? allActivities : null}
+        onClose={() => setOpenPanel(null)}
+      />
+      <UsageCategoryPanel
+        open={openPanel?.type === 'usage'}
+        onClose={() => setOpenPanel(null)}
+        usage={usage}
+        accountId={accountId}
+        clientId={usage?.clientId}
+      />
+      <SimpleTablePanel
+        open={openPanel?.type === 'datasets'}
+        onClose={() => setOpenPanel(null)}
+        title="DaaS / RaaS Datasets"
+        subtitle="Best-effort match by name"
+        columns={DAAS_COLUMNS}
+        rows={usage?.datasets || []}
+      />
+      <TicketListPanel
+        tickets={openPanel?.type === 'tickets' ? externalData.tickets : null}
+        onClose={() => setOpenPanel(null)}
+        onTicketClick={(t) => { setOpenPanel(null); setActiveTicket(t); }}
+      />
+      <JiraListPanel
+        issues={openPanel?.type === 'issues' ? externalData.issues : null}
+        onClose={() => setOpenPanel(null)}
+        onIssueClick={(i) => { setOpenPanel(null); setActiveIssue(i); }}
+      />
+      <JiraListPanel
+        issues={openPanel?.type === 'l3' ? l3Issues : null}
+        title="L3 Tickets"
+        onClose={() => setOpenPanel(null)}
+        onIssueClick={(i) => { setOpenPanel(null); setActiveL3Issue(i); }}
+      />
+      <BatchListPanel
+        dags={openPanel?.type === 'liveDags' ? externalData.dags : null}
+        onClose={() => setOpenPanel(null)}
+        onDagClick={(d) => { setOpenPanel(null); setActiveDag(d); }}
+      />
+
+      {/* ── Detail-level panels ──────────────────────────────────────────────── */}
       {activeDeal && (
         <DealDetailPanel deal={activeDeal} onClose={() => setActiveDeal(null)} />
       )}
+      <TicketDetailPanel
+        ticket={activeTicket}
+        onClose={() => setActiveTicket(null)}
+        onBack={() => { setActiveTicket(null); setOpenPanel({ type: 'tickets' }); }}
+      />
+      <JiraDetailPanel
+        issue={activeIssue}
+        onClose={() => setActiveIssue(null)}
+        onBack={() => { setActiveIssue(null); setOpenPanel({ type: 'issues' }); }}
+      />
+      <JiraDetailPanel
+        issue={activeL3Issue}
+        onClose={() => setActiveL3Issue(null)}
+        onBack={() => { setActiveL3Issue(null); setOpenPanel({ type: 'l3' }); }}
+      />
+      <BatchDetailPanel
+        dag={activeDag}
+        onClose={() => setActiveDag(null)}
+        onBack={() => { setActiveDag(null); setOpenPanel({ type: 'liveDags' }); }}
+      />
     </div>
   );
 }

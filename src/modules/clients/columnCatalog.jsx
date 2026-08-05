@@ -105,6 +105,33 @@ export const COLUMN_CATALOG = [
   // Batch
   { key: 'BatchDagCount', label: 'Batch DAGs', group: 'Batch', render: (r) => formatNum(r.BatchDagCount) },
   { key: 'BatchHealthPct', label: 'Batch Success Rate', group: 'Batch', render: (r) => (r.BatchHealthPct == null ? '—' : `${r.BatchHealthPct}%`) },
+
+  // Support (Freshdesk)
+  { key: 'FdOpenTickets', label: 'Open Tickets (Freshdesk)', group: 'Support (Freshdesk)', render: (r) => formatNum(r.FdOpenTickets) },
+  { key: 'FdEscalatedTickets', label: 'Escalated', group: 'Support (Freshdesk)', render: (r) => formatNum(r.FdEscalatedTickets) },
+  { key: 'FdUrgentTickets', label: 'Urgent Priority', group: 'Support (Freshdesk)', render: (r) => formatNum(r.FdUrgentTickets) },
+  { key: 'FdAvgFirstResponseHrs', label: 'Avg First Response (hrs)', group: 'Support (Freshdesk)', render: (r) => formatNum(r.FdAvgFirstResponseHrs) },
+  { key: 'FdOldestOpenAgeDays', label: 'Oldest Open Ticket (days)', group: 'Support (Freshdesk)', render: (r) => formatNum(r.FdOldestOpenAgeDays) },
+
+  // Dev (Jira)
+  { key: 'JiraOpenIssues', label: 'Open Issues', group: 'Dev (Jira)', render: (r) => formatNum(r.JiraOpenIssues) },
+  { key: 'JiraHighPriorityIssues', label: 'High/Highest Priority', group: 'Dev (Jira)', render: (r) => formatNum(r.JiraHighPriorityIssues) },
+  { key: 'JiraBugCount', label: 'Open Bugs', group: 'Dev (Jira)', render: (r) => formatNum(r.JiraBugCount) },
+  { key: 'JiraOldestOpenAgeDays', label: 'Oldest Open Issue (days)', group: 'Dev (Jira)', render: (r) => formatNum(r.JiraOldestOpenAgeDays) },
+
+  // Batch (Live) — Astronomer, current status; distinct from the "Batch"
+  // group above, which is historical/Snowflake-sourced.
+  { key: 'AstroDagCount', label: 'Live DAGs', group: 'Batch (Live)', render: (r) => formatNum(r.AstroDagCount) },
+  {
+    key: 'AstroLastRunState',
+    label: 'Last Run Status',
+    group: 'Batch (Live)',
+    render: (r) => r.AstroLastRunState
+      ? <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${r.AstroLastRunState === 'success' ? 'bg-green-100 text-green-700' : r.AstroLastRunState === 'failed' ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-600'}`}>{r.AstroLastRunState}</span>
+      : '—',
+  },
+  { key: 'AstroHasImportErrors', label: 'Import Errors', group: 'Batch (Live)', render: (r) => (r.AstroHasImportErrors == null ? '—' : r.AstroHasImportErrors ? 'Yes' : 'No') },
+  { key: 'AstroNextRunAfter', label: 'Next Scheduled Run', group: 'Batch (Live)', render: (r) => relativeDate(r.AstroNextRunAfter) },
 ];
 
 export const COLUMN_GROUPS = [...new Set(COLUMN_CATALOG.map((c) => c.group))];

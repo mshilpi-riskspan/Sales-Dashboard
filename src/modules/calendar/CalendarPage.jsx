@@ -65,6 +65,10 @@ function categoryStyle(category) {
   return CATEGORY_STYLES[category] || CATEGORY_STYLES.Other;
 }
 
+// Most CEO-relevant first — a category with 2 meetings but real stakes
+// (Renewal) should read before a category with 25 low-stakes ones (Check-in).
+const CATEGORY_ORDER = ['Renewal', 'QBR', 'Trial', 'Kickoff', 'Demo', 'Check-in', 'Other', 'Internal'];
+
 // Purely text-based classification off Subject + notes — no Account/Opportunity
 // cross-reference (Event↔Account/Opportunity matching in this org is fuzzy
 // name-matching only, no reliable ID join).
@@ -224,10 +228,19 @@ function CalendarGrid({ weekEvents, weekStart, onEventClick }) {
 function WeekSummary({ weekEvents, prevWeekEvents, selectedRep }) {
   const classified = useMemo(() => weekEvents.map((e) => ({ event: e, ...classifyMeeting(e) })), [weekEvents]);
 
-  const categoryCounts = useMemo(() => {
-    const counts = new Map();
-    classified.forEach(({ category }) => counts.set(category, (counts.get(category) || 0) + 1));
-    return [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  // One row per category, with the actual company names that fall into it —
+  // so "25 Check-in" isn't a bare number disconnected from who's on it.
+  const categoryGroups = useMemo(() => {
+    const groups = new Map();
+    classified.forEach(({ company, category }) => {
+      if (!groups.has(category)) groups.set(category, { count: 0, companies: [] });
+      const g = groups.get(category);
+      g.count += 1;
+      if (company && !g.companies.includes(company)) g.companies.push(company);
+    });
+    return [...groups.entries()]
+      .map(([category, g]) => ({ category, ...g }))
+      .sort((a, b) => CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category));
   }, [classified]);
 
   const notable = useMemo(() => {
@@ -241,11 +254,6 @@ function WeekSummary({ weekEvents, prevWeekEvents, selectedRep }) {
         return true;
       })
       .slice(0, 5);
-  }, [classified]);
-
-  const companies = useMemo(() => {
-    const names = classified.map((c) => c.company).filter(Boolean);
-    return [...new Set(names)];
   }, [classified]);
 
   const repLoad = useMemo(() => {
@@ -271,30 +279,24 @@ function WeekSummary({ weekEvents, prevWeekEvents, selectedRep }) {
         <span className={`text-xs font-medium ${trendColor}`}>{trendLabel}</span>
       </div>
 
-      {/* Companies met */}
-      {companies.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-3">
-          {companies.slice(0, 8).map((c) => (
-            <span key={c} className="text-[10px] bg-white border border-rs-border text-rs-text px-2 py-0.5 rounded-full">
-              {c}
-            </span>
-          ))}
-          {companies.length > 8 && (
-            <span className="text-[10px] text-rs-muted px-1 py-0.5">+{companies.length - 8} more</span>
-          )}
-        </div>
-      )}
-
-      {/* Category breakdown */}
-      {categoryCounts.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5 mb-3">
-          {categoryCounts.map(([category, count]) => (
-            <span
-              key={category}
-              className={`text-[10px] font-medium px-2 py-0.5 rounded-full border ${categoryStyle(category)}`}
-            >
-              {count} {category}
-            </span>
+      {/* Category breakdown — type and who's on it, together */}
+      {categoryGroups.length > 0 ? (
+        <div className="divide-y divide-rs-border/50 border border-rs-border rounded-lg overflow-hidden mb-3">
+          {categoryGroups.map(({ category, companies }) => (
+            <div key={category} className="flex items-center gap-2.5 px-3 py-1.5 bg-white">
+              <span className="w-[74px] shrink-0">
+                <span
+                  className={`inline-block text-[10px] font-semibold px-2 py-0.5 rounded-full border whitespace-nowrap ${categoryStyle(category)}`}
+                >
+                  {category}
+                </span>
+              </span>
+              {companies.length > 0 ? (
+                <span className="text-xs text-rs-text">{companies.join(', ')}</span>
+              ) : (
+                <span className="text-xs text-rs-muted italic">No client tagged</span>
+              )}
+            </div>
           ))}
         </div>
       ) : (

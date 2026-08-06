@@ -249,11 +249,19 @@ export default function AccountView({ accountId, onBack }) {
   const wonOpps = (opps || []).filter(o => o.IsWon);
   const wonARR = wonOpps.reduce((s, o) => s + (o.Annual_Recurring_Revenue_ARR__c || 0), 0);
 
-  // Derive last activity from fetched activities (more reliable than SF's LastActivityDate rollup)
-  const lastActivityDate = allActivities.length > 0
-    ? (allActivities[0]._type === 'task'
-        ? allActivities[0].ActivityDate
-        : allActivities[0].StartDateTime?.slice(0, 10))
+  // Derive last activity from fetched activities (more reliable than SF's
+  // LastActivityDate rollup) — restricted to today-or-earlier, since
+  // allActivities also includes future-scheduled events/meetings and a
+  // "Last Activity" reading "Upcoming" would be contradictory.
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const pastActivities = allActivities.filter(a => {
+    const d = a._type === 'task' ? a.ActivityDate : a.StartDateTime?.slice(0, 10);
+    return d && d <= todayStr;
+  });
+  const lastActivityDate = pastActivities.length > 0
+    ? (pastActivities[0]._type === 'task'
+        ? pastActivities[0].ActivityDate
+        : pastActivities[0].StartDateTime?.slice(0, 10))
     : null;
 
   const clientStatus = isClientTier(account?.AccountType_Tier__c) ? 'Client' : 'Prospect';
@@ -371,12 +379,19 @@ export default function AccountView({ accountId, onBack }) {
               ) : (
                 <StatTile label="Open Deals" value={openOpps.length} onClick={openOpps.length > 0 ? () => setOpenPanel({ type: 'deals' }) : undefined} />
               )}
-              <div className="bg-rs-surface rounded-lg p-3">
-                <p className="text-[10px] uppercase tracking-widest text-rs-muted">Last Activity</p>
-                {(loading || activities === null)
-                  ? <Skeleton className="h-6 w-16 mt-1" />
-                  : <p className="text-lg font-semibold text-rs-text mt-0.5">{lastActivityDate ? relativeDate(lastActivityDate) : '—'}</p>}
-              </div>
+              {loading ? (
+                <div className="bg-rs-surface rounded-lg p-3">
+                  <p className="text-[10px] uppercase tracking-widest text-rs-muted">Last Activity</p>
+                  <Skeleton className="h-6 w-16 mt-1" />
+                </div>
+              ) : (
+                <StatTile
+                  label="Last Activity"
+                  value={lastActivityDate ? relativeDate(lastActivityDate) : '—'}
+                  sublabel={`${allActivities.length} activit${allActivities.length === 1 ? 'y' : 'ies'} (1yr)`}
+                  onClick={allActivities.length > 0 ? () => setOpenPanel({ type: 'activity' }) : undefined}
+                />
+              )}
             </div>
 
             {!loading && wonOpps.length > 0 && (
@@ -539,18 +554,11 @@ export default function AccountView({ accountId, onBack }) {
                 {[1, 2, 3].map(i => <Skeleton key={i} className="h-3 w-full" />)}
               </div>
             ) : (
-              <>
-                <div className="space-y-1.5 mb-4">
-                  <CadenceBar label="7 days" count={cadence.last7} total={Math.max(cadence.last365, 1)} />
-                  <CadenceBar label="90 days" count={cadence.last90} total={Math.max(cadence.last365, 1)} />
-                  <CadenceBar label="1 year" count={cadence.last365} total={Math.max(cadence.last365, 1)} />
-                </div>
-                <StatTile
-                  label="Activity (1yr)"
-                  value={allActivities.length}
-                  onClick={allActivities.length > 0 ? () => setOpenPanel({ type: 'activity' }) : undefined}
-                />
-              </>
+              <div className="space-y-1.5">
+                <CadenceBar label="7 days" count={cadence.last7} total={Math.max(cadence.last365, 1)} />
+                <CadenceBar label="90 days" count={cadence.last90} total={Math.max(cadence.last365, 1)} />
+                <CadenceBar label="1 year" count={cadence.last365} total={Math.max(cadence.last365, 1)} />
+              </div>
             )}
           </section>
         </div>

@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, Fragment } from 'react';
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import SlidePanel from '../../components/common/SlidePanel';
 import StatTile from './StatTile';
 import UsageChart from './UsageChart';
@@ -55,28 +56,21 @@ function TypePills({ counts }) {
   );
 }
 
-// Grouped daily bars — amber forecast runs, teal query runs — for either a
+// Two-line daily chart — amber forecast runs, teal query runs — for either a
 // single expanded user row or the aggregate across the current Users
 // selection at the top of the panel.
-function RunActivityBars({ activity }) {
-  const max = Math.max(1, ...activity.flatMap((r) => [r.FORECAST_RUN_COUNT, r.QUERY_RUN_COUNT]));
+function RunActivityChart({ activity, height = 160, showLegend = true }) {
   return (
-    <div className="flex items-end gap-[1px] h-16">
-      {activity.map((row) => (
-        <div key={row.RUN_DATE} className="flex items-end gap-[1px] h-full" style={{ width: `${100 / activity.length}%` }} title={row.RUN_DATE}>
-          <div
-            className="flex-1 bg-amber-400/70 rounded-t hover:bg-amber-500 transition-colors"
-            style={{ height: `${Math.max(2, (row.FORECAST_RUN_COUNT / max) * 56)}px` }}
-            title={`${row.RUN_DATE}: ${row.FORECAST_RUN_COUNT} forecast run${row.FORECAST_RUN_COUNT === 1 ? '' : 's'}`}
-          />
-          <div
-            className="flex-1 bg-rs-teal/60 rounded-t hover:bg-rs-teal transition-colors"
-            style={{ height: `${Math.max(2, (row.QUERY_RUN_COUNT / max) * 56)}px` }}
-            title={`${row.RUN_DATE}: ${row.QUERY_RUN_COUNT} query run${row.QUERY_RUN_COUNT === 1 ? '' : 's'}`}
-          />
-        </div>
-      ))}
-    </div>
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={activity} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+        <XAxis dataKey="RUN_DATE" tick={{ fontSize: 10, fill: '#858C9C' }} axisLine={false} tickLine={false} />
+        <YAxis tick={{ fontSize: 10, fill: '#858C9C' }} axisLine={false} tickLine={false} width={32} />
+        <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #DADEE5' }} />
+        {showLegend && <Legend wrapperStyle={{ fontSize: 11 }} iconType="plainline" />}
+        <Line type="monotone" dataKey="FORECAST_RUN_COUNT" name="Forecast runs" stroke="#D97706" strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="QUERY_RUN_COUNT" name="Query runs" stroke="#0C8EA3" strokeWidth={2} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
   );
 }
 
@@ -98,7 +92,7 @@ function ActivityRow({ userId, accountId, clientId, daysBack, colSpan }) {
         ) : activity.length === 0 ? (
           <p className="text-xs text-rs-muted">No run activity in this range.</p>
         ) : (
-          <RunActivityBars activity={activity} />
+          <RunActivityChart activity={activity} height={120} showLegend={false} />
         )}
       </td>
     </tr>
@@ -256,17 +250,11 @@ export default function UsageCategoryPanel({ open, onClose, usage, accountId, cl
           <>
             <div>
               {chartLoading ? (
-                <div className="h-16 flex items-center justify-center text-xs text-rs-muted">Loading…</div>
+                <div className="h-40 flex items-center justify-center text-xs text-rs-muted">Loading…</div>
               ) : chartActivity.length === 0 ? (
-                <div className="h-16 flex items-center justify-center text-xs text-rs-muted">No run activity for this selection.</div>
+                <div className="h-40 flex items-center justify-center text-xs text-rs-muted">No run activity for this selection.</div>
               ) : (
-                <>
-                  <RunActivityBars activity={chartActivity} />
-                  <p className="text-[10px] text-rs-muted mt-1">
-                    <span className="inline-block w-2 h-2 rounded-sm bg-amber-400/70 mr-1" />Forecast runs
-                    <span className="inline-block w-2 h-2 rounded-sm bg-rs-teal/60 ml-3 mr-1" />Query runs
-                  </p>
-                </>
+                <RunActivityChart activity={chartActivity} height={220} />
               )}
             </div>
             <div className="grid grid-cols-3 gap-3">

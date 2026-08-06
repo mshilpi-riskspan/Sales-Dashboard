@@ -71,10 +71,6 @@ export const COLUMN_CATALOG = [
       ? <span className={`text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap ${HEALTH_STYLE[r.HealthStatus] || 'bg-slate-100 text-slate-600'}`}>{r.HealthStatus}</span>
       : '—',
   },
-  { key: 'HealthScore', label: 'Health Score', group: 'Health', render: (r) => formatNum(r.HealthScore) },
-  { key: 'SupportScore', label: 'Support Score', group: 'Health', render: (r) => formatNum(r.SupportScore) },
-  { key: 'UsageScore', label: 'Usage Score', group: 'Health', render: (r) => formatNum(r.UsageScore) },
-  { key: 'CommercialScore', label: 'Commercial Score', group: 'Health', render: (r) => formatNum(r.CommercialScore) },
 
   // Usage
   { key: 'ApiCalls30d', label: 'API Calls (30d)', group: 'Usage', render: (r) => formatNum(r.ApiCalls30d) },
@@ -82,12 +78,6 @@ export const COLUMN_CATALOG = [
   { key: 'ModelExecutions30d', label: 'Model Executions (30d)', group: 'Usage', render: (r) => formatNum(r.ModelExecutions30d) },
   { key: 'ModelFailures30d', label: 'Model Failures (30d)', group: 'Usage', render: (r) => formatNum(r.ModelFailures30d) },
   { key: 'DistinctUsers30d', label: 'Distinct Users (30d)', group: 'Usage', render: (r) => formatNum(r.DistinctUsers30d) },
-
-  // Support
-  { key: 'OpenTickets', label: 'Open Tickets', group: 'Support', render: (r) => formatNum(r.OpenTickets) },
-  { key: 'EscalatedTickets', label: 'Escalated Tickets', group: 'Support', render: (r) => formatNum(r.EscalatedTickets) },
-  { key: 'CriticalTickets', label: 'Critical Tickets', group: 'Support', render: (r) => formatNum(r.CriticalTickets) },
-  { key: 'AvgFirstResponseHours', label: 'Avg First Response (hrs)', group: 'Support', render: (r) => formatNum(r.AvgFirstResponseHours) },
 
   // Commercial
   { key: 'SnowflakeARR', label: 'ARR (Snowflake)', group: 'Commercial', render: (r) => formatMoney(r.SnowflakeARR) },
@@ -138,5 +128,5 @@ export const COLUMN_GROUPS = [...new Set(COLUMN_CATALOG.map((c) => c.group))];
 
 export const DEFAULT_VISIBLE_COLUMNS = [
   'Name', 'AccountType_Tier__c', 'Industry', 'SalesLead', 'Current_ARR__c',
-  'HealthStatus', 'OpenTickets', 'DaysToRenewal', 'DistinctUsers30d',
+  'HealthStatus', 'FdOpenTickets', 'DaysToRenewal', 'DistinctUsers30d',
 ];

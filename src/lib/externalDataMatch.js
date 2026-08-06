@@ -86,3 +86,46 @@ export function matchAstroDags({ dags, runsByDagId, knownTags, matchName }) {
 
   return matched.map((dag) => ({ ...dag, runs: runsByDagId?.[dag.dag_id] || [] }));
 }
+
+// ---- Maxio (SaaSOptics) ----------------------------------------------------
+// Primary: customer.sf_id === Salesforce Account.Id — well-populated in this
+// org (unlike Freshdesk's company FK), so this is a direct match for most
+// customers. Fallback: fuzzy-match the customer/billing-profile name.
+export function matchMaxioCustomers({ customers, accountId, matchName }) {
+  const direct = customers.filter((c) => c.sf_id === accountId);
+  if (direct.length > 0) return direct;
+  if (!matchName) return [];
+  return customers.filter(
+    (c) => looksLikeMatch(matchName, c.name) || looksLikeMatch(matchName, c.billing_profile?.company_name)
+  );
+}
+
+// ARR lives on /transactions (the actual subscription line items), not on
+// /contracts — each transaction has home_arr_amount, start_date/end_date
+// (the renewal date), and a cancelled flag. ARR = sum of home_arr_amount
+// across currently-active (not cancelled, start_date <= today <= end_date)
+// transactions; `lines` includes every transaction — active, expired, and
+// cancelled — so a drill-down panel can show full contract history, not
+// just what's active right now.
+export function buildMaxioBilling({ customers, contracts, transactions, items, accountId, matchName }) {
+  const matchedCustomers = matchMaxioCustomers({ customers, accountId, matchName });
+  const customerIds = new Set(matchedCustomers.map((c) => c.id));
+  const contractIds = new Set(contracts.filter((c) => customerIds.has(c.customer)).map((c) => c.id));
+  const itemNameById = new Map(items.map((i) => [i.id, i.name]));
+
+  const today = new Date().toISOString().slice(0, 10);
+  const lines = transactions
+    .filter((t) => contractIds.has(t.contract))
+    .map((t) => ({
+      ...t,
+      itemName: itemNameById.get(t.item) || null,
+      isActive: !t.cancelled && !!t.start_date && t.start_date <= today && (!t.end_date || t.end_date >= today),
+    }))
+    .sort((a, b) => (b.end_date || '').localeCompare(a.end_date || ''));
+
+  const activeLines = lines.filter((l) => l.isActive);
+  const arr = activeLines.reduce((sum, l) => sum + (Number(l.home_arr_amount) || 0), 0);
+  const nextRenewalDate = activeLines.reduce((min, l) => (l.end_date && (!min || l.end_date < min) ? l.end_date : min), null);
+
+  return { matchedCustomers, arr, nextRenewalDate, lines };
+}

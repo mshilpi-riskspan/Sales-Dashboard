@@ -8,6 +8,7 @@ import { fetchCurrentClientsSnowflakeData } from './functions/_lib/currentClient
 import { fetchFreshdeskData } from './functions/_lib/freshdesk.js';
 import { fetchJiraData } from './functions/_lib/jira.js';
 import { fetchAstronomerData } from './functions/_lib/astronomer.js';
+import { fetchMaxioData } from './functions/_lib/maxio.js';
 
 // Stores instance URL after SOAP login — set via POST /sf-instance-url from the app
 let sfInstanceUrl = null;
@@ -208,6 +209,18 @@ export default defineConfig(({ mode }) => {
           server.middlewares.use('/api/astronomer/current', async (req, res) => {
             try {
               const result = await fetchAstronomerData(env);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+
+          // Local mirror of functions/api/maxio/current.js
+          server.middlewares.use('/api/maxio/current', async (req, res) => {
+            try {
+              const result = await fetchMaxioData(env);
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify(result));
             } catch (err) {

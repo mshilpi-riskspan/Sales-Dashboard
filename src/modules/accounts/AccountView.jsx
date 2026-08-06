@@ -10,7 +10,8 @@ import { fetchAccountUsage, fetchSnowflakeClients } from '../../datasources/snow
 import { fetchFreshdeskData } from '../../datasources/freshdesk';
 import { fetchJiraData } from '../../datasources/jira';
 import { fetchAstronomerData } from '../../datasources/astronomer';
-import { matchFreshdeskTickets, matchJiraIssues, matchAstroDags, knownTagsForAccount } from '../../lib/externalDataMatch';
+import { fetchMaxioData } from '../../datasources/maxio';
+import { matchFreshdeskTickets, matchJiraIssues, matchAstroDags, buildMaxioBilling, knownTagsForAccount } from '../../lib/externalDataMatch';
 import { findConfirmedClientId } from '../../lib/accountMapping';
 import DealDetailPanel from '../../components/common/DealDetailPanel';
 import PipelineListPanel from '../pipeline/PipelineListPanel';
@@ -122,6 +123,27 @@ const DAAS_COLUMNS = [
   },
 ];
 
+// Column defs for the Maxio contract-lines SimpleTablePanel — every
+// transaction (active/expired/cancelled), so the full renewal history is
+// visible, not just what's active right now.
+const MAXIO_COLUMNS = [
+  { key: 'itemName', label: 'Module / Item', render: (t) => t.itemName || '—' },
+  { key: 'start_date', label: 'Start Date', render: (t) => t.start_date || '—' },
+  { key: 'end_date', label: 'Renewal Date', render: (t) => t.end_date || '—' },
+  { key: 'home_arr_amount', label: 'ARR', render: (t) => formatMoney(Number(t.home_arr_amount) || 0) },
+  { key: 'home_amount', label: 'Line Value', render: (t) => formatMoney(Number(t.home_amount) || 0) },
+  {
+    key: 'status', label: 'Status',
+    render: (t) => t.cancelled
+      ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-red-100 text-red-600">Cancelled</span>
+      : t.isActive
+        ? <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-green-100 text-green-700">Active</span>
+        : <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">Expired</span>,
+  },
+  { key: 'is_autorenewal', label: 'Auto-Renew', render: (t) => (t.is_autorenewal ? 'Yes' : 'No') },
+  { key: 'invoice_description', label: 'Description', render: (t) => t.invoice_description || '—' },
+];
+
 // Copy of cadence logic from DealDetailPanel (per plan: copy, don't refactor shared component)
 function computeCadence(activities) {
   const { tasks = [], events = [] } = activities || {};
@@ -159,6 +181,7 @@ export default function AccountView({ accountId, onBack }) {
   const [usageLoading, setUsageLoading] = useState(true);
   const [externalData, setExternalData] = useState({ tickets: [], issues: [], dags: [] });
   const [externalDataLoading, setExternalDataLoading] = useState(true);
+  const [maxioBilling, setMaxioBilling] = useState({ arr: 0, nextRenewalDate: null, lines: [] });
 
   // Drill-down state — `openPanel` drives whichever LIST-level panel is
   // open (mutually exclusive by construction, matching SlidePanel's own
@@ -214,7 +237,8 @@ export default function AccountView({ accountId, onBack }) {
       fetchFreshdeskData(),
       fetchJiraData(),
       fetchAstronomerData(),
-    ]).then(([snowflakeClients, freshdeskData, jiraData, astroData]) => {
+      fetchMaxioData(),
+    ]).then(([snowflakeClients, freshdeskData, jiraData, astroData, maxioData]) => {
       const overrideClientId = findConfirmedClientId(accountId);
       const directClient = snowflakeClients.find((c) => c.salesforceAccountId === accountId);
       const clientId = overrideClientId || directClient?.clientId || null;
@@ -230,8 +254,16 @@ export default function AccountView({ accountId, onBack }) {
         issues: matchJiraIssues({ issues: jiraData.issues, knownTags, matchName }),
         dags: matchAstroDags({ dags: astroData.dags, runsByDagId: astroData.runsByDagId, knownTags, matchName }),
       });
+      setMaxioBilling(buildMaxioBilling({
+        customers: maxioData.customers, contracts: maxioData.contracts,
+        transactions: maxioData.transactions, items: maxioData.items,
+        accountId, matchName,
+      }));
     })
-      .catch(() => setExternalData({ tickets: [], issues: [], dags: [] }))
+      .catch(() => {
+        setExternalData({ tickets: [], issues: [], dags: [] });
+        setMaxioBilling({ arr: 0, nextRenewalDate: null, lines: [] });
+      })
       .finally(() => setExternalDataLoading(false));
   }, [accountId]);
 
@@ -448,6 +480,38 @@ export default function AccountView({ accountId, onBack }) {
             )}
           </section>
 
+          {/* Billing (Maxio) — ARR here is the sum of home_arr_amount across
+              currently-active (non-cancelled) subscription line items, the
+              actual contract/subscription value, distinct from the
+              Salesforce Current_ARR__c figure shown above. */}
+          <section>
+            <SectionLabel>Billing (Maxio)</SectionLabel>
+            {externalDataLoading ? (
+              <div className="grid grid-cols-3 gap-3">
+                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+              </div>
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
+                <StatTile
+                  label="ARR (Maxio)"
+                  value={formatMoney(maxioBilling.arr)}
+                  onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
+                />
+                <StatTile
+                  label="Next Renewal"
+                  value={maxioBilling.nextRenewalDate ? relativeDate(maxioBilling.nextRenewalDate) : '—'}
+                  sublabel={maxioBilling.nextRenewalDate || undefined}
+                  onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
+                />
+                <StatTile
+                  label="Contract Lines"
+                  value={maxioBilling.lines.length}
+                  onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
+                />
+              </div>
+            )}
+          </section>
+
           {/* Support, Dev & Live Batch Status (Freshdesk / Jira / Astronomer) */}
           <section>
             <SectionLabel>Support, Dev &amp; Live Batch Status</SectionLabel>
@@ -593,6 +657,15 @@ export default function AccountView({ accountId, onBack }) {
         subtitle="Best-effort match by name"
         columns={DAAS_COLUMNS}
         rows={usage?.datasets || []}
+      />
+      <SimpleTablePanel
+        open={openPanel?.type === 'maxio'}
+        onClose={() => setOpenPanel(null)}
+        title="Billing (Maxio)"
+        subtitle="Every subscription line item — active, expired, and cancelled"
+        columns={MAXIO_COLUMNS}
+        rows={maxioBilling.lines}
+        rowKey="id"
       />
       <TicketListPanel
         tickets={openPanel?.type === 'tickets' ? externalData.tickets : null}

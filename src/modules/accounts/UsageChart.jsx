@@ -7,14 +7,14 @@ import { fetchAccountUsageChartData } from '../../datasources/snowflake';
 // combine multiple days: 'sum' for counts, 'avg' for figures that are
 // already a per-day aggregate (latency, distinct users) where summing across
 // days would be meaningless/double-counted.
-const METRICS = [
-  { key: 'API_CALL_VOLUME', label: 'API Calls', agg: 'sum' },
+export const METRICS = [
+  { key: 'API_CALL_VOLUME', label: 'Queries', agg: 'sum' },
   { key: 'FORECAST_RUN_COUNT', label: 'Forecast Runs', agg: 'sum' },
   { key: 'MODEL_EXECUTIONS', label: 'Model Executions', agg: 'sum' },
   { key: 'MODEL_FAILURES', label: 'Model Failures', agg: 'sum' },
   { key: 'SCENARIO_RUNS', label: 'Scenario Runs', agg: 'sum' },
   { key: 'STRESS_TEST_RUNS', label: 'Stress Tests', agg: 'sum' },
-  { key: 'PREMIUM_FEATURE_USAGE_COUNT', label: 'Premium Feature Usage', agg: 'sum' },
+  { key: 'PREMIUM_FEATURE_USAGE_COUNT', label: 'API Calls', agg: 'sum' },
   { key: 'OVERRIDE_COUNT', label: 'Overrides', agg: 'sum' },
   { key: 'FORECAST_LOAN_COUNT', label: 'Forecast Loans', agg: 'sum' },
   { key: 'FORECAST_SECURITY_COUNT', label: 'Forecast Securities', agg: 'sum' },
@@ -22,7 +22,8 @@ const METRICS = [
   { key: 'DISTINCT_USERS', label: 'Distinct Users', agg: 'avg' },
 ];
 
-const LOOKBACKS = [
+export const LOOKBACKS = [
+  { key: '30d', label: '30d', days: 30 },
   { key: '3mo', label: '3mo', days: 90 },
   { key: '6mo', label: '6mo', days: 180 },
   { key: '1yr', label: '1yr', days: 365 },
@@ -139,7 +140,7 @@ function PillGroup({ options, value, onChange }) {
   );
 }
 
-export default function UsageChart({ accountId, clientId }) {
+export default function UsageChart({ accountId, clientId, onWindowChange }) {
   const [metricKey, setMetricKey] = useState('API_CALL_VOLUME');
   const [lookback, setLookback] = useState('6mo');
   const [frequency, setFrequency] = useState('week');
@@ -147,6 +148,7 @@ export default function UsageChart({ accountId, clientId }) {
   const [loading, setLoading] = useState(true);
 
   const daysBack = LOOKBACKS.find((l) => l.key === lookback)?.days || 180;
+  const lookbackLabel = LOOKBACKS.find((l) => l.key === lookback)?.label || lookback;
 
   // Only the lookback window triggers a refetch — metric/frequency changes
   // just re-derive from the same already-fetched daily rows.
@@ -157,6 +159,13 @@ export default function UsageChart({ accountId, clientId }) {
       .catch(() => setDailyRows([]))
       .finally(() => setLoading(false));
   }, [accountId, clientId, daysBack]);
+
+  // Bubble the fetched window up so a parent panel can derive its own
+  // lookback-driven stats from the exact same daily rows, instead of a
+  // separate always-fixed-30-day fetch.
+  useEffect(() => {
+    onWindowChange?.({ dailyRows, daysBack, lookbackLabel, loading });
+  }, [dailyRows, daysBack, lookbackLabel, loading, onWindowChange]);
 
   const metric = METRICS.find((m) => m.key === metricKey) || METRICS[0];
   const chartData = useMemo(() => bucketData(dailyRows, metric, frequency), [dailyRows, metric, frequency]);

@@ -92,10 +92,6 @@ export const COLUMN_CATALOG = [
   { key: 'RaasDatasetCount', label: 'RaaS Datasets', group: 'DaaS/RaaS', render: (r) => formatNum(r.RaasDatasetCount) },
   { key: 'RaasTotalUpb', label: 'RaaS Total UPB', group: 'DaaS/RaaS', render: (r) => formatMoney(r.RaasTotalUpb) },
 
-  // Batch
-  { key: 'BatchDagCount', label: 'Batch DAGs', group: 'Batch', render: (r) => formatNum(r.BatchDagCount) },
-  { key: 'BatchHealthPct', label: 'Batch Success Rate', group: 'Batch', render: (r) => (r.BatchHealthPct == null ? '—' : `${r.BatchHealthPct}%`) },
-
   // Support (Freshdesk)
   { key: 'FdOpenTickets', label: 'Open Tickets (Freshdesk)', group: 'Support (Freshdesk)', render: (r) => formatNum(r.FdOpenTickets) },
   { key: 'FdEscalatedTickets', label: 'Escalated', group: 'Support (Freshdesk)', render: (r) => formatNum(r.FdEscalatedTickets) },
@@ -109,8 +105,8 @@ export const COLUMN_CATALOG = [
   { key: 'JiraBugCount', label: 'Open Bugs', group: 'Dev (Jira)', render: (r) => formatNum(r.JiraBugCount) },
   { key: 'JiraOldestOpenAgeDays', label: 'Oldest Open Issue (days)', group: 'Dev (Jira)', render: (r) => formatNum(r.JiraOldestOpenAgeDays) },
 
-  // Batch (Live) — Astronomer, current status; distinct from the "Batch"
-  // group above, which is historical/Snowflake-sourced.
+  // Batch (Live) — Astronomer, current pause/stale/import-error/next-run
+  // status, replacing the old Snowflake-sourced historical Batch columns.
   { key: 'AstroDagCount', label: 'Live DAGs', group: 'Batch (Live)', render: (r) => formatNum(r.AstroDagCount) },
   {
     key: 'AstroLastRunState',

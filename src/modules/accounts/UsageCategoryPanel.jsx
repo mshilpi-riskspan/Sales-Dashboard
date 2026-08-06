@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, Fragment } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend } from 'recharts';
 import SlidePanel from '../../components/common/SlidePanel';
 import StatTile from './StatTile';
-import UsageChart from './UsageChart';
+import UsageChart, { METRICS } from './UsageChart';
 import { fetchAccountUsers, fetchUserActivity } from '../../datasources/snowflake';
 
 function formatNum(v) {
@@ -10,11 +10,26 @@ function formatNum(v) {
   return Math.round(v).toLocaleString();
 }
 
-function pctDelta(current, prev) {
-  if (current === null || prev === null || prev === undefined) return null;
-  if (prev === 0) return current > 0 ? '+100%' : null;
-  const pct = Math.round(((current - prev) / prev) * 100);
-  return `${pct >= 0 ? '+' : ''}${pct}%`;
+// Sums (or averages, per metric.agg) a chartable metric across whatever
+// daily rows are currently loaded — i.e. exactly the window UsageChart's own
+// lookback pill has fetched, so the grid below always matches what the
+// chart above is showing rather than a separate always-fixed-30-day figure.
+function aggregateMetric(rows, metric) {
+  let sum = 0, count = 0;
+  for (const row of rows) {
+    const v = row[metric.key];
+    if (v === null || v === undefined) continue;
+    sum += v;
+    count += 1;
+  }
+  if (count === 0) return null;
+  return metric.agg === 'avg' ? Math.round((sum / count) * 100) / 100 : sum;
+}
+
+function formatMetricValue(metric, value) {
+  if (value == null) return '—';
+  if (metric.key === 'AVG_API_LATENCY_MS') return `${Math.round(value)}ms`;
+  return formatNum(value);
 }
 
 function relativeDate(dateStr) {
@@ -121,11 +136,10 @@ const TYPE_FILTERS = [
 // this warehouse are forecast/query runs and their loan/security breakdown,
 // so the rest of the FACT_USAGE_METRICS grid has no per-user equivalent.
 export default function UsageCategoryPanel({ open, onClose, usage, accountId, clientId }) {
-  const failures = usage?.failures || [];
-  const usageMetrics = usage?.usage;
   const distinctUsers = usage?.distinctUsers;
   const servers = usage?.usageByServer || [];
 
+  const [chartWindow, setChartWindow] = useState({ dailyRows: [], daysBack: 180, lookbackLabel: '6mo', loading: true });
   const [usersDaysBack, setUsersDaysBack] = useState('30');
   const [typeFilter, setTypeFilter] = useState('all');
   const [selectedUserIds, setSelectedUserIds] = useState(() => new Set());
@@ -281,35 +295,16 @@ export default function UsageCategoryPanel({ open, onClose, usage, accountId, cl
         ) : (
           <>
             <div>
-              <UsageChart accountId={accountId} clientId={clientId} />
+              <UsageChart accountId={accountId} clientId={clientId} onWindowChange={setChartWindow} />
             </div>
             <div className="grid grid-cols-3 gap-3">
-              <StatTile
-                label="API Calls (30d)"
-                value={formatNum(usageMetrics?.API_CALLS_30D)}
-                delta={pctDelta(usageMetrics?.API_CALLS_30D, usageMetrics?.API_CALLS_PREV_30D)}
-                unavailable={failures.includes('usage')}
-              />
-              <StatTile
-                label="Forecast Runs (30d)"
-                value={formatNum(usageMetrics?.FORECASTS_30D)}
-                delta={pctDelta(usageMetrics?.FORECASTS_30D, usageMetrics?.FORECASTS_PREV_30D)}
-                unavailable={failures.includes('usage')}
-              />
-              <StatTile label="Model Executions (30d)" value={formatNum(usageMetrics?.MODEL_EXECUTIONS_30D)} unavailable={failures.includes('usage')} />
-              <StatTile label="Model Failures (30d)" value={formatNum(usageMetrics?.MODEL_FAILURES_30D)} unavailable={failures.includes('usage')} />
-              <StatTile label="Scenario Runs (30d)" value={formatNum(usageMetrics?.SCENARIO_RUNS_30D)} unavailable={failures.includes('usage')} />
-              <StatTile label="Stress Tests (30d)" value={formatNum(usageMetrics?.STRESS_TESTS_30D)} unavailable={failures.includes('usage')} />
-              <StatTile label="Premium Feature Usage (30d)" value={formatNum(usageMetrics?.PREMIUM_FEATURE_USAGE_30D)} unavailable={failures.includes('usage')} />
-              <StatTile label="Overrides (30d)" value={formatNum(usageMetrics?.OVERRIDES_30D)} unavailable={failures.includes('usage')} />
-              <StatTile label="Forecast Loans (30d)" value={formatNum(usageMetrics?.FORECAST_LOANS_30D)} unavailable={failures.includes('usage')} />
-              <StatTile label="Forecast Securities (30d)" value={formatNum(usageMetrics?.FORECAST_SECURITIES_30D)} unavailable={failures.includes('usage')} />
-              <StatTile
-                label="Avg API Latency (30d)"
-                value={usageMetrics?.AVG_LATENCY_MS_30D != null ? `${Math.round(usageMetrics.AVG_LATENCY_MS_30D)}ms` : '—'}
-                unavailable={failures.includes('usage')}
-              />
-              <StatTile label="Distinct Users (30d)" value={formatNum(distinctUsers?.DISTINCT_USERS)} unavailable={failures.includes('distinctUsers')} />
+              {METRICS.map((m) => (
+                <StatTile
+                  key={m.key}
+                  label={`${m.label} (${chartWindow.lookbackLabel})`}
+                  value={chartWindow.loading ? '…' : formatMetricValue(m, aggregateMetric(chartWindow.dailyRows, m))}
+                />
+              ))}
             </div>
 
             {(distinctUsers?.USER_RUNS || distinctUsers?.SYSTEM_RUNS) ? (

@@ -185,7 +185,12 @@ export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData,
   const astroRunsByDagId = astroData?.runsByDagId || {};
 
   return (accounts || [])
-    .filter((a) => isClientTier(a.AccountType_Tier__c))
+    // Keep every Client-tier account, PLUS any account with a
+    // verified/confirmed Snowflake match even if its Salesforce tier says
+    // otherwise (e.g. tagged Prospect despite being an active paying
+    // client in Snowflake) — otherwise a real match silently drops off
+    // this page while still counting in Account Mapping's totals.
+    .filter((a) => isClientTier(a.AccountType_Tier__c) || accountToClientId.has(a.Id))
     .map((a) => {
       const resolution = accountToClientId.get(a.Id);
       const clientId = resolution?.clientId || null;

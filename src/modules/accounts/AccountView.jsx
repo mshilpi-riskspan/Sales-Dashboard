@@ -415,7 +415,7 @@ export default function AccountView({ accountId, onBack }) {
             ) : (
               <div className="grid grid-cols-3 gap-3">
                 <StatTile
-                  label="API Calls (30d)"
+                  label="Queries (30d)"
                   value={formatNum(usageMetrics?.API_CALLS_30D)}
                   onClick={() => setOpenPanel({ type: 'usage' })}
                 />

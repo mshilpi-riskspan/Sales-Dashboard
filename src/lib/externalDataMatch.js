@@ -42,7 +42,12 @@ export function matchFreshdeskTickets({ tickets, companies, freshdeskCompanyId, 
 // is tag/name matching from the start, not a fallback: known client tag
 // against the issue's project name (catches the ~15 dedicated per-client
 // projects like "OPS PacLife PretiumProject"), then against labels/summary,
-// then a plain fuzzy-match of the account name as a last resort.
+// then a plain fuzzy-match of the account name as a last resort — same
+// (LABELS LIKE '%name%' OR SUMMARY LIKE '%name%') shape client-health-app's
+// jiraIssuesQuery() uses to find a client's LVL3-project escalations, which
+// this fallback was previously missing the labels half of (a client with no
+// clientTagMap entry whose only signal was a label, not the project name or
+// summary, matched nothing).
 export function matchJiraIssues({ issues, knownTags, matchName }) {
   return issues.filter((issue) => {
     const project = issue.fields?.project?.name || '';
@@ -57,7 +62,7 @@ export function matchJiraIssues({ issues, knownTags, matchName }) {
       return false;
     }
     if (!matchName) return false;
-    return looksLikeMatch(matchName, project) || looksLikeMatch(matchName, summary);
+    return looksLikeMatch(matchName, project) || looksLikeMatch(matchName, summary) || looksLikeMatch(matchName, labels);
   });
 }
 

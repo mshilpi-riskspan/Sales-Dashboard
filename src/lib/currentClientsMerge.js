@@ -9,6 +9,7 @@ import { isClientTier } from '../config/accountTier';
 import { looksLikeMatch, normalizeForTagMatch } from './accountMatch';
 import { CLIENT_TAG_TO_ACCOUNT_ID } from '../config/clientTagMap';
 import { matchFreshdeskTickets, matchJiraIssues, matchAstroDags, knownTagsForAccount } from './externalDataMatch';
+import { resolveClientMappingStatuses } from './accountMapping';
 
 // Inverted: accountId -> Set<tag> (several tags can map to one account, e.g.
 // a client with separate DaaS feeds per product line).
@@ -146,19 +147,16 @@ export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData,
   const overrideMap = loadOverrideMap();
   const accountsById = new Map((accounts || []).map((a) => [a.Id, a]));
 
-  // accountId -> { clientId, matchStatus }, built the same way
-  // AccountMapping.jsx's `rows` useMemo resolves Account<->CLIENT_ID, just
-  // inverted to key by account instead of by Snowflake client.
+  // accountId -> { clientId, matchStatus } — sourced from the exact same
+  // resolveClientMappingStatuses() AccountMapping.jsx itself uses, so the
+  // Snowflake Match status shown here can never drift from that page's
+  // verified/confirmed/pending/stale/rejected counts. Only verified/confirmed
+  // clients actually resolve to an account, so those are the only statuses
+  // that can appear here — everything else stays 'unmatched'.
   const accountToClientId = new Map();
-  for (const c of (snowflakeClients || [])) {
-    if (c.salesforceAccountId && accountsById.has(c.salesforceAccountId)) {
-      accountToClientId.set(c.salesforceAccountId, { clientId: c.clientId, matchStatus: 'verified' });
-    }
-  }
-  for (const [clientId, override] of Object.entries(overrideMap)) {
-    if (override.status === 'confirmed' && override.salesforceAccountId && accountsById.has(override.salesforceAccountId)) {
-      accountToClientId.set(override.salesforceAccountId, { clientId, matchStatus: 'confirmed' });
-    }
+  for (const cs of resolveClientMappingStatuses({ accounts, snowflakeClients, overrideMap })) {
+    const accountId = cs.resolvedAccountId || cs.mappedAccountId;
+    if (accountId) accountToClientId.set(accountId, { clientId: cs.clientId, matchStatus: cs.status });
   }
 
   // DIM_CLIENT.DISPLAY_NAME (falling back to CLIENT_NAME) is the curated name

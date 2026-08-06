@@ -16,3 +16,37 @@ export function findConfirmedClientId(accountId) {
     return null;
   }
 }
+
+// Single source of truth for the Account <-> DIM_CLIENT.CLIENT_ID mapping
+// status (verified/confirmed/pending/stale/rejected) — used by both
+// AccountMapping.jsx (one row per Snowflake client) and
+// currentClientsMerge.js (looked up per Salesforce account), so the two
+// pages can never disagree on what "verified" means.
+export function resolveClientMappingStatuses({ accounts, snowflakeClients, overrideMap }) {
+  const accountsById = new Map((accounts || []).map((a) => [a.Id, a]));
+
+  return (snowflakeClients || []).map((c) => {
+    const clientName = c.displayName || c.clientName;
+    const override = overrideMap?.[c.clientId];
+
+    let sourceType;
+    let resolvedAccount = null;
+
+    if (c.salesforceAccountId) {
+      resolvedAccount = accountsById.get(c.salesforceAccountId) || null;
+      sourceType = resolvedAccount ? 'verified' : 'stale';
+    } else {
+      sourceType = 'pending';
+    }
+
+    const status = override?.status || sourceType;
+
+    return {
+      clientId: c.clientId,
+      clientName,
+      resolvedAccountId: resolvedAccount?.Id || null,
+      mappedAccountId: (status === 'confirmed' && override?.salesforceAccountId) || null,
+      status,
+    };
+  });
+}

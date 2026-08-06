@@ -8,6 +8,7 @@ import { useDashboard } from '../../context/DashboardContext';
 import { fetchAllAccounts } from '../../datasources/salesforce';
 import { fetchSnowflakeClients } from '../../datasources/snowflake';
 import { findBestMatch, matchConfidence } from '../../lib/accountMatch';
+import { resolveClientMappingStatuses } from '../../lib/accountMapping';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorState from '../../components/common/ErrorState';
 
@@ -241,40 +242,30 @@ export default function AccountMapping() {
   const rows = useMemo(() => {
     const accounts = accountsQ.data || [];
     const accountsById = new Map(accounts.map((a) => [a.Id, a]));
+    const clientsByI = new Map((clientsQ.data || []).map((c) => [c.clientId, c]));
 
-    return (clientsQ.data || []).map((c) => {
-      const clientName = c.displayName || c.clientName;
-      const override = map[c.clientId];
+    return resolveClientMappingStatuses({ accounts, snowflakeClients: clientsQ.data, overrideMap: map }).map((r) => {
+      const c = clientsByI.get(r.clientId);
+      const override = map[r.clientId];
+      const resolvedAccount = r.resolvedAccountId ? accountsById.get(r.resolvedAccountId) : null;
+      const suggestion = r.status === 'pending' && accounts.length ? findBestMatch(r.clientName, accounts) : null;
 
-      let sourceType;
-      let resolvedAccount = null;
-      let suggestion = null;
-
-      if (c.salesforceAccountId) {
-        resolvedAccount = accountsById.get(c.salesforceAccountId) || null;
-        sourceType = resolvedAccount ? 'verified' : 'stale';
-      } else {
-        sourceType = 'pending';
-        if (accounts.length) suggestion = findBestMatch(clientName, accounts);
-      }
-
-      const status = override?.status || sourceType;
-      const displayConfidence = status === 'confirmed' || status === 'rejected'
+      const displayConfidence = r.status === 'confirmed' || r.status === 'rejected'
         ? (override?.confidence || null)
-        : status === 'verified'
+        : r.status === 'verified'
           ? 'verified'
-          : status === 'pending'
+          : r.status === 'pending'
             ? (suggestion ? matchConfidence(suggestion.score) : null)
             : null;
 
       return {
-        clientId: c.clientId,
-        clientName,
-        contractTier: c.contractTier,
-        salesforceAccountId: c.salesforceAccountId,
+        clientId: r.clientId,
+        clientName: r.clientName,
+        contractTier: c?.contractTier,
+        salesforceAccountId: c?.salesforceAccountId,
         resolvedAccount,
         suggestion,
-        status,
+        status: r.status,
         displayConfidence,
         mappedAccountId: override?.salesforceAccountId || null,
         mappedAccountName: override?.salesforceAccountName || null,

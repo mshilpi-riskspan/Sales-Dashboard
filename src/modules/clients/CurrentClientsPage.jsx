@@ -30,10 +30,14 @@ function persistVisibleColumns(keys) {
   catch { /* ignore */ }
 }
 
-function FilterDropdown({ label, value, options, onChange }) {
+// Single-select by default (value/onChange are a plain string, matching the
+// existing Industry/Health filters). Pass multiSelect to switch value/onChange
+// to an array — options get checkboxes and the dropdown stays open between
+// picks so several tiers can be checked in one pass; the "All ___" option
+// (value 'all') always clears the selection and closes, in both modes.
+function FilterDropdown({ label, value, options, onChange, multiSelect = false }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
-  const selected = options.find((o) => o.value === value);
 
   useEffect(() => {
     function onClickOutside(e) {
@@ -43,31 +47,83 @@ function FilterDropdown({ label, value, options, onChange }) {
     return () => document.removeEventListener('mousedown', onClickOutside);
   }, []);
 
+  const realOptions = options.filter((o) => o.value !== 'all');
+  const allOption = options.find((o) => o.value === 'all');
+
+  const isActive = multiSelect ? value.length > 0 : value !== 'all';
+  let buttonText = label;
+  if (multiSelect) {
+    if (value.length === 1) buttonText = `${label}: ${realOptions.find((o) => o.value === value[0])?.label || value[0]}`;
+    else if (value.length > 1) buttonText = `${label} (${value.length})`;
+  } else if (isActive) {
+    buttonText = `${label}: ${realOptions.find((o) => o.value === value)?.label || value}`;
+  }
+
+  function toggleValue(optValue) {
+    if (!multiSelect) {
+      onChange(optValue);
+      setOpen(false);
+      return;
+    }
+    const next = value.includes(optValue) ? value.filter((v) => v !== optValue) : [...value, optValue];
+    onChange(next);
+  }
+
+  function selectAll() {
+    onChange(multiSelect ? [] : 'all');
+    setOpen(false);
+  }
+
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
         className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-colors
-          ${value !== 'all'
+          ${isActive
             ? 'bg-rs-teal/10 text-rs-teal border-rs-teal/30'
             : 'text-rs-muted border-rs-border hover:text-rs-text hover:border-rs-text/30'
           }`}
       >
-        {label}{value !== 'all' ? `: ${selected?.label || value}` : ''}
+        {buttonText}
         <ChevronDownIcon className="h-3 w-3" />
       </button>
       {open && (
         <div className="absolute top-full mt-1 left-0 z-20 bg-white border border-rs-border rounded-lg shadow-lg py-1 min-w-[140px] max-h-64 overflow-y-auto">
-          {options.map((opt) => (
+          {allOption && (
             <button
-              key={opt.value}
-              onClick={() => { onChange(opt.value); setOpen(false); }}
+              onClick={selectAll}
               className={`w-full text-left px-3 py-1.5 text-xs hover:bg-rs-surface transition-colors whitespace-nowrap
-                ${opt.value === value ? 'text-rs-teal font-medium' : 'text-rs-text'}`}
+                ${!isActive ? 'text-rs-teal font-medium' : 'text-rs-text'}`}
             >
-              {opt.label}
+              {allOption.label}
             </button>
-          ))}
+          )}
+          {realOptions.map((opt) => {
+            const checked = multiSelect ? value.includes(opt.value) : opt.value === value;
+            return multiSelect ? (
+              <label
+                key={opt.value}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs hover:bg-rs-surface transition-colors whitespace-nowrap cursor-pointer"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleValue(opt.value)}
+                  className="rounded border-rs-border text-rs-teal focus:ring-rs-teal/30"
+                />
+                <span className={checked ? 'text-rs-teal font-medium' : 'text-rs-text'}>{opt.label}</span>
+              </label>
+            ) : (
+              <button
+                key={opt.value}
+                onClick={() => toggleValue(opt.value)}
+                className={`w-full text-left px-3 py-1.5 text-xs hover:bg-rs-surface transition-colors whitespace-nowrap
+                  ${checked ? 'text-rs-teal font-medium' : 'text-rs-text'}`}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
         </div>
       )}
     </div>
@@ -145,7 +201,7 @@ export default function CurrentClientsPage() {
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [filterTier, setFilterTier] = useState('all');
+  const [filterTier, setFilterTier] = useState([]);
   const [filterIndustry, setFilterIndustry] = useState('all');
   const [filterHealth, setFilterHealth] = useState('all');
   const [visibleColumns, setVisibleColumns] = useState(loadVisibleColumns);
@@ -212,7 +268,7 @@ export default function CurrentClientsPage() {
   const filteredSortedRows = useMemo(() => {
     let rows = allRows;
     if (selectedRep !== 'all') rows = rows.filter((r) => r.OwnerId === selectedRep);
-    if (filterTier !== 'all') rows = rows.filter((r) => r.AccountType_Tier__c === filterTier);
+    if (filterTier.length > 0) rows = rows.filter((r) => filterTier.includes(r.AccountType_Tier__c));
     if (filterIndustry !== 'all') rows = rows.filter((r) => r.Industry === filterIndustry);
     if (filterHealth !== 'all') rows = rows.filter((r) => r.HealthStatus === filterHealth);
     if (searchQuery) {
@@ -230,11 +286,11 @@ export default function CurrentClientsPage() {
     [visibleColumns]
   );
 
-  const hasFilters = filterTier !== 'all' || filterIndustry !== 'all' || filterHealth !== 'all';
-  const activeFilterCount = [filterTier !== 'all', filterIndustry !== 'all', filterHealth !== 'all'].filter(Boolean).length;
+  const hasFilters = filterTier.length > 0 || filterIndustry !== 'all' || filterHealth !== 'all';
+  const activeFilterCount = [filterTier.length > 0, filterIndustry !== 'all', filterHealth !== 'all'].filter(Boolean).length;
 
   function clearFilters() {
-    setFilterTier('all');
+    setFilterTier([]);
     setFilterIndustry('all');
     setFilterHealth('all');
   }
@@ -293,6 +349,7 @@ export default function CurrentClientsPage() {
             value={filterTier}
             options={[{ value: 'all', label: 'All tiers' }, ...allTiers.map((t) => ({ value: t, label: t }))]}
             onChange={setFilterTier}
+            multiSelect
           />
           <FilterDropdown
             label="Industry"

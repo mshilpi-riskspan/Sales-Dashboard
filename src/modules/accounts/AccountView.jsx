@@ -301,6 +301,7 @@ export default function AccountView({ accountId, onBack }) {
   const usageMetrics = usage?.usage;
   const distinctUsers = usage?.distinctUsers;
   const l3Issues = externalData.issues.filter(isL3Issue);
+  const activeModules = [...new Set(maxioBilling.lines.filter((l) => l.isActive).map((l) => l.itemName).filter(Boolean))];
 
   return (
     // -m-6 bleeds outside PageShell's p-6 so the navy header extends
@@ -560,6 +561,33 @@ export default function AccountView({ accountId, onBack }) {
 
         {/* Sidebar */}
         <div className="col-span-1 space-y-8">
+
+          {/* Current Modules — which Maxio subscription lines are active
+              right now, deduped by module/item name. Distinct from the
+              Account Plan below it since it's actual contract state, not a
+              sales note. */}
+          <section>
+            <SectionLabel>Current Modules</SectionLabel>
+            {externalDataLoading ? (
+              <Skeleton className="h-14 w-full" />
+            ) : activeModules.length === 0 ? (
+              <div className="bg-rs-surface rounded-lg p-4 text-xs text-rs-muted">
+                No active modules
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {activeModules.map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setOpenPanel({ type: 'maxio' })}
+                    className="text-xs font-medium px-2.5 py-1 rounded-full bg-rs-teal/10 text-rs-teal border border-rs-teal/30 hover:bg-rs-teal/20 transition-colors"
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            )}
+          </section>
 
           {/* Account Plan */}
           <section>

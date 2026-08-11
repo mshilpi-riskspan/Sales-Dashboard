@@ -303,8 +303,11 @@ export default function AccountView({ accountId, onBack }) {
   const l3Issues = externalData.issues.filter(isL3Issue);
 
   return (
-    // -m-6 bleeds outside PageShell's p-6 so the navy header extends edge-to-edge
-    <div className="-m-6">
+    // -m-6 bleeds outside PageShell's p-6 so the navy header extends
+    // edge-to-edge. overflow-x-hidden guards against that same negative
+    // margin spilling past <main>'s right edge and triggering a stray
+    // horizontal-scroll sliver in the browser's scrollbar chrome.
+    <div className="-m-6 overflow-x-hidden">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div className="bg-rs-navy text-white px-6 py-4">
         <button
@@ -385,7 +388,7 @@ export default function AccountView({ accountId, onBack }) {
           Sidebar: softer relationship context (account plan, contacts,
           engagement cadence) — still one click away, just de-prioritized. */}
       <div className="p-6 grid grid-cols-3 gap-6">
-        <div className="col-span-2 space-y-8">
+        <div className="col-span-2 space-y-8 min-w-0">
 
           {/* Relationship & Delivery */}
           <section>
@@ -499,8 +502,8 @@ export default function AccountView({ accountId, onBack }) {
                 />
                 <StatTile
                   label="Next Renewal"
-                  value={maxioBilling.nextRenewalDate ? relativeDate(maxioBilling.nextRenewalDate) : '—'}
-                  sublabel={maxioBilling.nextRenewalDate || undefined}
+                  value={maxioBilling.nextRenewalDate || '—'}
+                  sublabel={maxioBilling.nextRenewalDate ? relativeDate(maxioBilling.nextRenewalDate) : undefined}
                   onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
                 />
                 <StatTile

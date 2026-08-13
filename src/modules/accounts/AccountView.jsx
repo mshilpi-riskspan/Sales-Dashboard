@@ -227,18 +227,28 @@ export default function AccountView({ accountId, onBack }) {
   }, [accountId]);
 
   // Independent of both fetches above — reuses the same bulk Freshdesk/Jira/
-  // Astronomer fetches the Current Clients page uses (5-min cached, so this
-  // isn't a new per-account network cost) and filters to just this account.
+  // Astronomer/Maxio fetches the Current Clients page uses (5-min cached, so
+  // this isn't a new per-account network cost) and filters to just this
+  // account. allSettled, not all — e.g. Maxio env vars missing in one
+  // environment must not blank out Freshdesk/Jira/Astronomer too, each
+  // source degrades independently.
   useEffect(() => {
     setExternalDataLoading(true);
     setExternalData({ tickets: [], issues: [], dags: [] });
-    Promise.all([
+    Promise.allSettled([
       fetchSnowflakeClients(),
       fetchFreshdeskData(),
       fetchJiraData(),
       fetchAstronomerData(),
       fetchMaxioData(),
-    ]).then(([snowflakeClients, freshdeskData, jiraData, astroData, maxioData]) => {
+    ]).then(([snowflakeClientsR, freshdeskDataR, jiraDataR, astroDataR, maxioDataR]) => {
+      const value = (r, fallback) => (r.status === 'fulfilled' ? r.value : fallback);
+      const snowflakeClients = value(snowflakeClientsR, []);
+      const freshdeskData = value(freshdeskDataR, { tickets: [], companies: [] });
+      const jiraData = value(jiraDataR, { issues: [] });
+      const astroData = value(astroDataR, { dags: [], runsByDagId: {} });
+      const maxioData = value(maxioDataR, { customers: [], contracts: [], transactions: [], items: [] });
+
       const overrideClientId = findConfirmedClientId(accountId);
       const directClient = snowflakeClients.find((c) => c.salesforceAccountId === accountId);
       const clientId = overrideClientId || directClient?.clientId || null;
@@ -260,10 +270,6 @@ export default function AccountView({ accountId, onBack }) {
         accountId, matchName,
       }));
     })
-      .catch(() => {
-        setExternalData({ tickets: [], issues: [], dags: [] });
-        setMaxioBilling({ arr: 0, nextRenewalDate: null, lines: [] });
-      })
       .finally(() => setExternalDataLoading(false));
   }, [accountId]);
 

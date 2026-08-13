@@ -8,7 +8,7 @@ import { fetchCurrentClientsSnowflakeData } from './functions/_lib/currentClient
 import { fetchFreshdeskData } from './functions/_lib/freshdesk.js';
 import { fetchJiraData } from './functions/_lib/jira.js';
 import { fetchAstronomerData } from './functions/_lib/astronomer.js';
-import { fetchMaxioData } from './functions/_lib/maxio.js';
+import { fetchMaxioCustomers, fetchMaxioContracts, fetchMaxioTransactions, fetchMaxioItems } from './functions/_lib/maxio.js';
 
 // Stores instance URL after SOAP login — set via POST /sf-instance-url from the app
 let sfInstanceUrl = null;
@@ -217,17 +217,29 @@ export default defineConfig(({ mode }) => {
             }
           });
 
-          // Local mirror of functions/api/maxio/current.js
-          server.middlewares.use('/api/maxio/current', async (req, res) => {
-            try {
-              const result = await fetchMaxioData(env);
-              res.writeHead(200, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify(result));
-            } catch (err) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ error: err.message }));
-            }
-          });
+          // Local mirrors of functions/api/maxio/*.js — split into four
+          // resource-specific endpoints (see functions/_lib/maxio.js) so
+          // production doesn't exceed Cloudflare's per-request subrequest
+          // limit; mirrored the same way here for parity with prod, even
+          // though the dev server has no such cap.
+          const maxioResourceFetchers = {
+            customers: fetchMaxioCustomers,
+            contracts: fetchMaxioContracts,
+            transactions: fetchMaxioTransactions,
+            items: fetchMaxioItems,
+          };
+          for (const [resource, fetcher] of Object.entries(maxioResourceFetchers)) {
+            server.middlewares.use(`/api/maxio/${resource}`, async (req, res) => {
+              try {
+                const result = await fetcher(env);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(result));
+              } catch (err) {
+                res.writeHead(400, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            });
+          }
         },
       },
     ],

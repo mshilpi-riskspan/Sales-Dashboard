@@ -13,6 +13,17 @@
 // (the renewal date), and a cancelled flag. A contract is just the grouping
 // header; a customer can have several contracts, each with several
 // transactions (one per product/module/term).
+//
+// Each resource is fetched via its OWN Cloudflare Function invocation
+// (functions/api/maxio/<resource>.js), not one combined endpoint — this
+// dataset needs ~5 pages for customers, ~19 for contracts, ~15 for
+// transactions, ~17 for items (100 rows/page, server-enforced, larger
+// per_page values are silently capped). Fetching all four concurrently
+// within a single incoming request blew past Cloudflare's ~50-subrequest-
+// per-request ceiling (confirmed live: contracts/transactions came back
+// empty with "failures":["contracts","transactions"] in production while
+// customers/items — fetched first and cheaper — succeeded). Splitting into
+// four separately-invoked endpoints gives each its own subrequest budget.
 
 const REQUIRED_ENV_VARS = ['MAXIO_API_TOKEN', 'MAXIO_BASE_URL'];
 
@@ -61,21 +72,27 @@ async function fetchAllPages(env, path) {
   return rows;
 }
 
-export async function fetchMaxioData(env) {
+async function fetchMaxioResource(env, key, path) {
   assertConfigured(env);
+  try {
+    return { [key]: await fetchAllPages(env, path), failures: [] };
+  } catch {
+    return { [key]: [], failures: [key] };
+  }
+}
 
-  const [customersResult, contractsResult, transactionsResult, itemsResult] = await Promise.allSettled([
-    fetchAllPages(env, '/customers'),
-    fetchAllPages(env, '/contracts'),
-    fetchAllPages(env, '/transactions'),
-    fetchAllPages(env, '/items'),
-  ]);
+export function fetchMaxioCustomers(env) {
+  return fetchMaxioResource(env, 'customers', '/customers');
+}
 
-  const failures = [];
-  const customers = customersResult.status === 'fulfilled' ? customersResult.value : (failures.push('customers'), []);
-  const contracts = contractsResult.status === 'fulfilled' ? contractsResult.value : (failures.push('contracts'), []);
-  const transactions = transactionsResult.status === 'fulfilled' ? transactionsResult.value : (failures.push('transactions'), []);
-  const items = itemsResult.status === 'fulfilled' ? itemsResult.value : (failures.push('items'), []);
+export function fetchMaxioContracts(env) {
+  return fetchMaxioResource(env, 'contracts', '/contracts');
+}
 
-  return { customers, contracts, transactions, items, failures };
+export function fetchMaxioTransactions(env) {
+  return fetchMaxioResource(env, 'transactions', '/transactions');
+}
+
+export function fetchMaxioItems(env) {
+  return fetchMaxioResource(env, 'items', '/items');
 }

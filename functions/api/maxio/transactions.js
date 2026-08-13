@@ -1,11 +1,12 @@
-// GET /api/maxio/current — bulk customer/contract/transaction/item data for
-// the Current Clients page and AccountView. Fixed, server-authored fetch —
+// GET /api/maxio/transactions — one of four separately-invoked Maxio
+// resource endpoints (see functions/_lib/maxio.js for why this is split
+// into four instead of one combined fetch). Fixed, server-authored fetch —
 // no client-supplied input, ever.
-import { fetchMaxioData } from '../../_lib/maxio.js';
+import { fetchMaxioTransactions } from '../../_lib/maxio.js';
 
 export async function onRequest(context) {
   try {
-    const result = await fetchMaxioData(context.env);
+    const result = await fetchMaxioTransactions(context.env);
     return new Response(JSON.stringify(result), {
       headers: { 'Content-Type': 'application/json' },
     });

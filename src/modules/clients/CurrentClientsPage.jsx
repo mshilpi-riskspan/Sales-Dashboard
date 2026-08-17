@@ -232,6 +232,8 @@ export default function CurrentClientsPage() {
   const [filterTier, setFilterTier] = useState([]);
   const [filterIndustry, setFilterIndustry] = useState('all');
   const [filterHealth, setFilterHealth] = useState('all');
+  // Days-since-LastActivityDate threshold, or 'all'.
+  const [filterLastActivity, setFilterLastActivity] = useState('all');
   const [visibleColumns, setVisibleColumns] = useState(loadVisibleColumns);
   const [sortKey, setSortKey] = useState('Name');
   const [sortDir, setSortDir] = useState('asc');
@@ -338,24 +340,29 @@ export default function CurrentClientsPage() {
   const filteredSortedRows = useMemo(() => {
     let rows = allRows;
     if (filterHealth !== 'all') rows = rows.filter((r) => r.HealthStatus === filterHealth);
+    if (filterLastActivity !== 'all') {
+      const cutoff = Date.now() - Number(filterLastActivity) * 86400000;
+      rows = rows.filter((r) => r.LastActivityDate && new Date(r.LastActivityDate).getTime() >= cutoff);
+    }
     return [...rows].sort((a, b) => {
       const cmp = compareValues(a[sortKey], b[sortKey]);
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [allRows, filterHealth, sortKey, sortDir]);
+  }, [allRows, filterHealth, filterLastActivity, sortKey, sortDir]);
 
   const visibleColumnDefs = useMemo(
     () => COLUMN_CATALOG.filter((c) => visibleColumns.includes(c.key)),
     [visibleColumns]
   );
 
-  const hasFilters = filterTier.length > 0 || filterIndustry !== 'all' || filterHealth !== 'all';
-  const activeFilterCount = [filterTier.length > 0, filterIndustry !== 'all', filterHealth !== 'all'].filter(Boolean).length;
+  const hasFilters = filterTier.length > 0 || filterIndustry !== 'all' || filterHealth !== 'all' || filterLastActivity !== 'all';
+  const activeFilterCount = [filterTier.length > 0, filterIndustry !== 'all', filterHealth !== 'all', filterLastActivity !== 'all'].filter(Boolean).length;
 
   function clearFilters() {
     setFilterTier([]);
     setFilterIndustry('all');
     setFilterHealth('all');
+    setFilterLastActivity('all');
   }
 
   function handleSort(key) {
@@ -430,6 +437,17 @@ export default function CurrentClientsPage() {
               { value: 'RED', label: 'Red' },
             ]}
             onChange={setFilterHealth}
+          />
+          <FilterDropdown
+            label="Last Activity"
+            value={filterLastActivity}
+            options={[
+              { value: 'all', label: 'Any time' },
+              { value: '7', label: 'Last 7 days' },
+              { value: '30', label: 'Last 30 days' },
+              { value: '90', label: 'Last 90 days' },
+            ]}
+            onChange={setFilterLastActivity}
           />
           {hasFilters && (
             <button onClick={clearFilters} className="text-xs text-rs-teal hover:underline">

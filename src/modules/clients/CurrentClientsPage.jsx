@@ -8,6 +8,7 @@ import { fetchFreshdeskData } from '../../datasources/freshdesk';
 import { fetchJiraData } from '../../datasources/jira';
 import { fetchAstronomerData } from '../../datasources/astronomer';
 import { mergeCurrentClients } from '../../lib/currentClientsMerge';
+import { isClientTier, isCurrentClient, isTrackedTier } from '../../config/accountTier';
 import { COLUMN_CATALOG, COLUMN_GROUPS, DEFAULT_VISIBLE_COLUMNS } from './columnCatalog';
 import DataTable from '../../components/common/DataTable';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
@@ -15,6 +16,15 @@ import ErrorState from '../../components/common/ErrorState';
 import AccountView from '../accounts/AccountView';
 
 const VISIBLE_COLUMNS_KEY = 'currentClientsVisibleColumns';
+
+// Safety backstop, not the primary fix — the primary fix is filtering down
+// to tracked-tier accounts (or search matches) *before* mergeCurrentClients
+// runs, since the expensive part is the per-account Freshdesk/Jira/
+// Astronomer matching inside the merge, not the table render. This just
+// guards against a pathologically broad search (e.g. a single common
+// letter) still handing the merge thousands of rows. Set comfortably above
+// the ~1,200 tracked Tier 1-3 accounts so the default view is never capped.
+const MERGE_CAP = 2000;
 
 function loadVisibleColumns() {
   try {
@@ -188,6 +198,21 @@ function ColumnChooser({ visibleKeys, onChange }) {
   );
 }
 
+// Selecting a *Client* tier (e.g. "Tier 1 Client") auto-applies the exact
+// Salesforce report definition of a current client — Account Type equals
+// Platform Client/Both Platform and Consulting Client, AND ARR at End of
+// Month > $0 — on top of the plain tier match. Selecting a *Prospect* tier
+// applies no extra condition. This keeps "current client" accurate without a
+// second, confusing filter dropdown.
+function matchesTierFilter(account, filterTier) {
+  if (filterTier.length === 0) return true;
+  if (!filterTier.includes(account.AccountType_Tier__c)) return false;
+  if (isClientTier(account.AccountType_Tier__c)) {
+    return isCurrentClient({ Type: account.Type, ArrEndOfMonth: account.saasoptics__arr_at_end_of_month__c });
+  }
+  return true;
+}
+
 function compareValues(a, b) {
   if (a == null && b == null) return 0;
   if (a == null) return -1;
@@ -201,6 +226,9 @@ export default function CurrentClientsPage() {
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  // Tier options are the literal AccountType_Tier__c values ("Tier 1
+  // Client", "Tier 1 Prospect", ...), which already encode client-vs-
+  // prospect status — no separate Client Status filter needed on top.
   const [filterTier, setFilterTier] = useState([]);
   const [filterIndustry, setFilterIndustry] = useState('all');
   const [filterHealth, setFilterHealth] = useState('all');
@@ -240,10 +268,44 @@ export default function CurrentClientsPage() {
     return map;
   }, [openOppsQ.data]);
 
+  // The expensive step is mergeCurrentClients — it runs Freshdesk/Jira/
+  // Astronomer matching per account — so narrow the input *before* merging,
+  // not after. Default (no search): only tracked Tier 1-3 Client/Prospect
+  // accounts (~1,200 of the org's ~13,000) — excludes the untracked
+  // "Tier 4 Prospect" marketing-only bucket and blank-tier noise. With a
+  // search: broaden to every account by name match, since the user is
+  // looking for one specific account regardless of its tier.
+  const candidateAccounts = useMemo(() => {
+    if (!accountsQ.data) return [];
+    let rows = accountsQ.data;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      rows = rows.filter((a) => a.Name?.toLowerCase().includes(q));
+    } else {
+      rows = rows.filter((a) => isTrackedTier(a.AccountType_Tier__c));
+    }
+    if (selectedRep !== 'all') rows = rows.filter((a) => a.OwnerId === selectedRep);
+    rows = rows.filter((a) => matchesTierFilter(a, filterTier));
+    if (filterIndustry !== 'all') rows = rows.filter((a) => a.Industry === filterIndustry);
+    return rows.length > MERGE_CAP ? rows.slice(0, MERGE_CAP) : rows;
+  }, [accountsQ.data, searchQuery, selectedRep, filterTier, filterIndustry]);
+
+  const isMergeCapped = useMemo(() => {
+    if (!accountsQ.data) return false;
+    let rows = accountsQ.data;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      rows = rows.filter((a) => a.Name?.toLowerCase().includes(q));
+    } else {
+      rows = rows.filter((a) => isTrackedTier(a.AccountType_Tier__c));
+    }
+    return rows.length > MERGE_CAP;
+  }, [accountsQ.data, searchQuery]);
+
   const allRows = useMemo(() => {
-    if (!accountsQ.data || !clientsQ.data || !snowflakeDataQ.data) return [];
+    if (!clientsQ.data || !snowflakeDataQ.data) return [];
     return mergeCurrentClients({
-      accounts: accountsQ.data,
+      accounts: candidateAccounts,
       snowflakeClients: clientsQ.data,
       snowflakeData: snowflakeDataQ.data,
       openOppCounts,
@@ -251,35 +313,36 @@ export default function CurrentClientsPage() {
       jiraData: jiraQ.data,
       astroData: astroQ.data,
     });
-  }, [accountsQ.data, clientsQ.data, snowflakeDataQ.data, openOppCounts, freshdeskQ.data, jiraQ.data, astroQ.data]);
+  }, [candidateAccounts, clientsQ.data, snowflakeDataQ.data, openOppCounts, freshdeskQ.data, jiraQ.data, astroQ.data]);
+
+  // Tier/Industry options come from the full tracked-tier universe (not the
+  // current search-narrowed candidate set), so the dropdowns stay stable
+  // instead of shrinking to whatever's currently matched.
+  const trackedAccounts = useMemo(
+    () => (accountsQ.data || []).filter((a) => isTrackedTier(a.AccountType_Tier__c)),
+    [accountsQ.data]
+  );
 
   const allTiers = useMemo(() => {
     const s = new Set();
-    for (const r of allRows) if (r.AccountType_Tier__c) s.add(r.AccountType_Tier__c);
+    for (const a of trackedAccounts) if (a.AccountType_Tier__c) s.add(a.AccountType_Tier__c);
     return [...s].sort();
-  }, [allRows]);
+  }, [trackedAccounts]);
 
   const allIndustries = useMemo(() => {
     const s = new Set();
-    for (const r of allRows) if (r.Industry) s.add(r.Industry);
+    for (const a of trackedAccounts) if (a.Industry) s.add(a.Industry);
     return [...s].sort();
-  }, [allRows]);
+  }, [trackedAccounts]);
 
   const filteredSortedRows = useMemo(() => {
     let rows = allRows;
-    if (selectedRep !== 'all') rows = rows.filter((r) => r.OwnerId === selectedRep);
-    if (filterTier.length > 0) rows = rows.filter((r) => filterTier.includes(r.AccountType_Tier__c));
-    if (filterIndustry !== 'all') rows = rows.filter((r) => r.Industry === filterIndustry);
     if (filterHealth !== 'all') rows = rows.filter((r) => r.HealthStatus === filterHealth);
-    if (searchQuery) {
-      const q = searchQuery.toLowerCase();
-      rows = rows.filter((r) => r.Name?.toLowerCase().includes(q));
-    }
     return [...rows].sort((a, b) => {
       const cmp = compareValues(a[sortKey], b[sortKey]);
       return sortDir === 'asc' ? cmp : -cmp;
     });
-  }, [allRows, selectedRep, filterTier, filterIndustry, filterHealth, searchQuery, sortKey, sortDir]);
+  }, [allRows, filterHealth, sortKey, sortDir]);
 
   const visibleColumnDefs = useMemo(
     () => COLUMN_CATALOG.filter((c) => visibleColumns.includes(c.key)),
@@ -325,9 +388,9 @@ export default function CurrentClientsPage() {
       <div className="rounded-card border border-rs-border bg-white p-4 mb-4">
         <div className="flex items-center justify-between mb-3">
           <div>
-            <h2 className="text-sm font-semibold text-rs-text">Current Clients</h2>
+            <h2 className="text-sm font-semibold text-rs-text">Accounts</h2>
             <p className="text-[11px] text-rs-muted mt-0.5">
-              One row per client, combining Salesforce and Snowflake — pick any columns you need below
+              Search across every Salesforce account, combined with Snowflake/support data — filter to Current Clients or pick any columns you need below
             </p>
           </div>
           <ColumnChooser visibleKeys={visibleColumns} onChange={setVisibleColumns} />
@@ -340,7 +403,7 @@ export default function CurrentClientsPage() {
               type="text"
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search clients…"
+              placeholder="Search accounts…"
               className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-rs-border bg-white text-xs text-rs-text placeholder:text-rs-muted focus:outline-none focus:ring-2 focus:ring-rs-teal/30 focus:border-rs-teal"
             />
           </div>
@@ -373,13 +436,27 @@ export default function CurrentClientsPage() {
               Clear {activeFilterCount} filter{activeFilterCount !== 1 ? 's' : ''}
             </button>
           )}
-          <span className="text-xs text-rs-muted ml-auto">{filteredSortedRows.length.toLocaleString()} client{filteredSortedRows.length !== 1 ? 's' : ''}</span>
+          <span className="text-xs text-rs-muted ml-auto">
+            {isMergeCapped
+              ? `Showing first ${MERGE_CAP.toLocaleString()} matches`
+              : `${filteredSortedRows.length.toLocaleString()} account${filteredSortedRows.length !== 1 ? 's' : ''}`}
+          </span>
         </div>
+        {isMergeCapped && (
+          <p className="text-[11px] text-amber-700 mt-2">
+            That search matches more than {MERGE_CAP.toLocaleString()} accounts — narrow it down (or add a filter above) to see the rest.
+          </p>
+        )}
+        {!searchQuery && (
+          <p className="text-[11px] text-rs-muted mt-2">
+            Showing tracked clients &amp; prospects (Tier 1–3) only — search by name to look up any account, including untracked/marketing-only ones.
+          </p>
+        )}
       </div>
 
       <div className="rounded-card border border-rs-border overflow-hidden">
         {filteredSortedRows.length === 0 ? (
-          <div className="py-10 text-center text-sm text-rs-muted">No clients match this filter.</div>
+          <div className="py-10 text-center text-sm text-rs-muted">No accounts match this filter.</div>
         ) : (
           <DataTable
             columns={visibleColumnDefs}

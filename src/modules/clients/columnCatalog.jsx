@@ -42,10 +42,12 @@ const MATCH_STATUS_STYLE = {
 export const COLUMN_CATALOG = [
   // Salesforce
   { key: 'Name', label: 'Account', group: 'Salesforce' },
+  { key: 'Type', label: 'Account Type', group: 'Salesforce' },
   { key: 'AccountType_Tier__c', label: 'Tier', group: 'Salesforce' },
   { key: 'Industry', label: 'Industry', group: 'Salesforce' },
   { key: 'SalesLead', label: 'Sales Lead', group: 'Salesforce' },
   { key: 'Current_ARR__c', label: 'ARR (Salesforce)', group: 'Salesforce', render: (r) => formatMoney(r.Current_ARR__c) },
+  { key: 'ArrEndOfMonth', label: 'ARR at End of Month', group: 'Salesforce', render: (r) => formatMoney(r.ArrEndOfMonth) },
   { key: 'OpenOppsCount', label: 'Open Opps', group: 'Salesforce', render: (r) => formatNum(r.OpenOppsCount) },
   { key: 'OwnerName', label: 'Owner', group: 'Salesforce' },
   { key: 'BillingCity', label: 'City', group: 'Salesforce' },

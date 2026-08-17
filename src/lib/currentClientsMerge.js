@@ -5,7 +5,6 @@
 // else a confirmed localStorage['snowflakeAccountMap'] override) — an
 // unconfirmed fuzzy suggestion is NOT auto-applied here, same as
 // AccountMapping.jsx requires an explicit human Accept before it counts.
-import { isClientTier } from '../config/accountTier';
 import { looksLikeMatch, normalizeForTagMatch } from './accountMatch';
 import { CLIENT_TAG_TO_ACCOUNT_ID } from '../config/clientTagMap';
 import { matchFreshdeskTickets, matchJiraIssues, matchAstroDags, knownTagsForAccount } from './externalDataMatch';
@@ -184,13 +183,11 @@ export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData,
   const astroDags = astroData?.dags || [];
   const astroRunsByDagId = astroData?.runsByDagId || {};
 
+  // Merges whatever account rows the caller passes in (CurrentClientsPage.jsx
+  // narrows this to tracked Tier 1-3 accounts by default, or to search
+  // matches, before calling in — see isTrackedTier in accountTier.js) — this
+  // function itself no longer gates by tier.
   return (accounts || [])
-    // Keep every Client-tier account, PLUS any account with a
-    // verified/confirmed Snowflake match even if its Salesforce tier says
-    // otherwise (e.g. tagged Prospect despite being an active paying
-    // client in Snowflake) — otherwise a real match silently drops off
-    // this page while still counting in Account Mapping's totals.
-    .filter((a) => isClientTier(a.AccountType_Tier__c) || accountToClientId.has(a.Id))
     .map((a) => {
       const resolution = accountToClientId.get(a.Id);
       const clientId = resolution?.clientId || null;
@@ -215,10 +212,12 @@ export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData,
       return {
         Id: a.Id,
         Name: a.Name,
+        Type: a.Type,
         AccountType_Tier__c: a.AccountType_Tier__c,
         Industry: a.Industry,
         SalesLead: a.Sales_Lead__r?.Name || null,
         Current_ARR__c: a.Current_ARR__c,
+        ArrEndOfMonth: a.saasoptics__arr_at_end_of_month__c ?? null,
         LastActivityDate: a.LastActivityDate,
         OwnerId: a.OwnerId,
         OwnerName: a.Owner?.Name || null,

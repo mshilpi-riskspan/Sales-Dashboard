@@ -186,7 +186,7 @@ export async function fetchAccountDetail(accountId) {
   const { sessionId: sid, instanceUrl: base } = await getSession();
   const soql = `SELECT Id, Name, Industry, Type, Website, Phone, Description, AnnualRevenue,
     BillingCity, BillingState, OwnerId, Owner.Name,
-    AccountType_Tier__c, Current_ARR__c, Sales_Lead__r.Name,
+    AccountType_Tier__c, Current_ARR__c, saasoptics__arr_at_end_of_month__c, Sales_Lead__r.Name,
     Sales_Next_Steps__c, Existing_Connections__c, LastActivityDate
     FROM Account WHERE Id = '${accountId}'`;
   const proxied = `${base}/services/data/v60.0/query/?q=${encodeURIComponent(soql)}`.replace(/^https:\/\/[^/]+/, '/sf-api');
@@ -427,7 +427,7 @@ export async function fetchEventsInYear(year) {
 export async function fetchAllAccounts() {
   return queryAll(
     `SELECT Id, Name, AccountType_Tier__c, Industry,
-     Sales_Lead__r.Name, Current_ARR__c,
+     Sales_Lead__r.Name, Current_ARR__c, saasoptics__arr_at_end_of_month__c,
      LastActivityDate, OwnerId, Owner.Name,
      BillingCity, BillingState, Type
      FROM Account WHERE Name != null ORDER BY Name ASC`

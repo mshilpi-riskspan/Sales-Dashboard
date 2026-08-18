@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   ArrowLeftIcon, MapPinIcon, GlobeAltIcon,
 } from '@heroicons/react/24/outline';
@@ -11,7 +11,7 @@ import { fetchFreshdeskData } from '../../datasources/freshdesk';
 import { fetchJiraData } from '../../datasources/jira';
 import { fetchAstronomerData } from '../../datasources/astronomer';
 import { fetchMaxioData } from '../../datasources/maxio';
-import { matchFreshdeskTickets, matchJiraIssues, matchAstroDags, buildMaxioBilling, knownTagsForAccount } from '../../lib/externalDataMatch';
+import { matchFreshdeskTickets, matchJiraIssues, matchAstroDags, buildMaxioBilling, buildMaxioArrSeries, knownTagsForAccount } from '../../lib/externalDataMatch';
 import { findConfirmedClientId } from '../../lib/accountMapping';
 import DealDetailPanel from '../../components/common/DealDetailPanel';
 import PipelineListPanel from '../pipeline/PipelineListPanel';
@@ -25,6 +25,7 @@ import { TicketListPanel, TicketDetailPanel } from './TicketPanels';
 import { JiraListPanel, JiraDetailPanel } from './JiraPanels';
 import { BatchListPanel, BatchDetailPanel } from './BatchPanels';
 import UsageChart from './UsageChart';
+import MaxioArrChart from './MaxioArrChart';
 
 // L3 = Jira project key LVL3 (issue keys like LVL3-1234) — same convention
 // client-health uses to identify escalated support issues, ported here
@@ -52,6 +53,15 @@ function formatMoney(v) {
   if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
   if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
   return `$${Math.round(v)}`;
+}
+
+// Exact (unrounded/unabbreviated) dollar figure — used for Maxio billing
+// specifically, since "$2.0M" for an actual $1,950,492 ARR (formatMoney's
+// 1-decimal-place M rounding) reads as materially wrong at this level of
+// precision.
+function formatMoneyExact(v) {
+  if (v === null || v === undefined) return '—';
+  return `$${Math.round(v).toLocaleString()}`;
 }
 
 function formatSignedNum(v) {
@@ -130,8 +140,8 @@ const MAXIO_COLUMNS = [
   { key: 'itemName', label: 'Module / Item', render: (t) => t.itemName || '—' },
   { key: 'start_date', label: 'Start Date', render: (t) => t.start_date || '—' },
   { key: 'end_date', label: 'Renewal Date', render: (t) => t.end_date || '—' },
-  { key: 'home_arr_amount', label: 'ARR', render: (t) => formatMoney(Number(t.home_arr_amount) || 0) },
-  { key: 'home_amount', label: 'Line Value', render: (t) => formatMoney(Number(t.home_amount) || 0) },
+  { key: 'home_arr_amount', label: 'ARR', render: (t) => formatMoneyExact(Number(t.home_arr_amount) || 0) },
+  { key: 'home_amount', label: 'Line Value', render: (t) => formatMoneyExact(Number(t.home_amount) || 0) },
   {
     key: 'status', label: 'Status',
     render: (t) => t.cancelled
@@ -308,6 +318,7 @@ export default function AccountView({ accountId, onBack }) {
   const distinctUsers = usage?.distinctUsers;
   const l3Issues = externalData.issues.filter(isL3Issue);
   const activeModules = [...new Set(maxioBilling.lines.filter((l) => l.isActive).map((l) => l.itemName).filter(Boolean))];
+  const maxioArrSeries = useMemo(() => buildMaxioArrSeries(maxioBilling.lines), [maxioBilling.lines]);
 
   return (
     // -m-6 bleeds outside PageShell's p-6 so the navy header extends
@@ -397,47 +408,35 @@ export default function AccountView({ accountId, onBack }) {
       <div className="p-6 grid grid-cols-3 gap-6">
         <div className="col-span-2 space-y-8 min-w-0">
 
-          {/* Relationship & Delivery */}
+          {/* Overview — Maxio billing (ARR = sum of home_arr_amount across
+              currently-active, non-cancelled subscription line items;
+              distinct from the Salesforce Current_ARR__c figure) alongside
+              open-deal/won-deal context, so billing and pipeline read
+              together at a glance. */}
           <section>
-            <SectionLabel>Relationship &amp; Delivery</SectionLabel>
-            <div className="grid grid-cols-3 gap-3 mb-4">
-              <div className="bg-rs-surface rounded-lg p-3">
-                <p className="text-[10px] uppercase tracking-widest text-rs-muted">Current ARR</p>
-                {loading ? <Skeleton className="h-6 w-16 mt-1" /> : (
-                  <button
-                    onClick={openOpps.length > 0 ? () => setOpenPanel({ type: 'deals' }) : undefined}
-                    disabled={openOpps.length === 0}
-                    className={`text-lg font-semibold text-rs-text mt-0.5 ${openOpps.length > 0 ? 'cursor-pointer hover:text-rs-teal transition-colors' : ''}`}
-                  >
-                    {formatARR(account?.Current_ARR__c)}
-                  </button>
-                )}
+            <SectionLabel>Overview</SectionLabel>
+            {externalDataLoading || loading ? (
+              <div className="grid grid-cols-3 gap-3">
+                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
               </div>
-              {loading ? (
-                <div className="bg-rs-surface rounded-lg p-3">
-                  <p className="text-[10px] uppercase tracking-widest text-rs-muted">Open Deals</p>
-                  <Skeleton className="h-6 w-16 mt-1" />
-                </div>
-              ) : (
-                <StatTile label="Open Deals" value={openOpps.length} onClick={openOpps.length > 0 ? () => setOpenPanel({ type: 'deals' }) : undefined} />
-              )}
-              {loading ? (
-                <div className="bg-rs-surface rounded-lg p-3">
-                  <p className="text-[10px] uppercase tracking-widest text-rs-muted">Last Activity</p>
-                  <Skeleton className="h-6 w-16 mt-1" />
-                </div>
-              ) : (
+            ) : (
+              <div className="grid grid-cols-3 gap-3">
                 <StatTile
-                  label="Last Activity"
-                  value={lastActivityDate ? relativeDate(lastActivityDate) : '—'}
-                  sublabel={`${allActivities.length} activit${allActivities.length === 1 ? 'y' : 'ies'} (1yr)`}
-                  onClick={allActivities.length > 0 ? () => setOpenPanel({ type: 'activity' }) : undefined}
+                  label="ARR (Maxio)"
+                  value={formatMoneyExact(maxioBilling.arr)}
+                  onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
                 />
-              )}
-            </div>
-
+                <StatTile
+                  label="Next Renewal"
+                  value={maxioBilling.nextRenewalDate || '—'}
+                  sublabel={maxioBilling.nextRenewalDate ? relativeDate(maxioBilling.nextRenewalDate) : undefined}
+                  onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
+                />
+                <StatTile label="Open Deals" value={openOpps.length} onClick={openOpps.length > 0 ? () => setOpenPanel({ type: 'deals' }) : undefined} />
+              </div>
+            )}
             {!loading && wonOpps.length > 0 && (
-              <p className="text-xs text-rs-muted">
+              <p className="text-xs text-rs-muted mt-3">
                 {wonOpps.length} closed-won deal{wonOpps.length !== 1 ? 's' : ''}, {formatARR(wonARR)} total ARR won
               </p>
             )}
@@ -490,38 +489,6 @@ export default function AccountView({ accountId, onBack }) {
             )}
           </section>
 
-          {/* Billing (Maxio) — ARR here is the sum of home_arr_amount across
-              currently-active (non-cancelled) subscription line items, the
-              actual contract/subscription value, distinct from the
-              Salesforce Current_ARR__c figure shown above. */}
-          <section>
-            <SectionLabel>Billing (Maxio)</SectionLabel>
-            {externalDataLoading ? (
-              <div className="grid grid-cols-3 gap-3">
-                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
-              </div>
-            ) : (
-              <div className="grid grid-cols-3 gap-3">
-                <StatTile
-                  label="ARR (Maxio)"
-                  value={formatMoney(maxioBilling.arr)}
-                  onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
-                />
-                <StatTile
-                  label="Next Renewal"
-                  value={maxioBilling.nextRenewalDate || '—'}
-                  sublabel={maxioBilling.nextRenewalDate ? relativeDate(maxioBilling.nextRenewalDate) : undefined}
-                  onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
-                />
-                <StatTile
-                  label="Contract Lines"
-                  value={maxioBilling.lines.length}
-                  onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
-                />
-              </div>
-            )}
-          </section>
-
           {/* Support, Dev & Live Batch Status (Freshdesk / Jira / Astronomer) */}
           <section>
             <SectionLabel>Support, Dev &amp; Live Batch Status</SectionLabel>
@@ -567,6 +534,34 @@ export default function AccountView({ accountId, onBack }) {
 
         {/* Sidebar */}
         <div className="col-span-1 space-y-8">
+
+          {/* Activity & Engagement */}
+          <section>
+            <SectionLabel>Activity &amp; Engagement</SectionLabel>
+            <div className="mb-3">
+              {loading ? (
+                <Skeleton className="h-14 w-full" />
+              ) : (
+                <StatTile
+                  label="Last Activity"
+                  value={lastActivityDate ? relativeDate(lastActivityDate) : '—'}
+                  sublabel={`${allActivities.length} activit${allActivities.length === 1 ? 'y' : 'ies'} (1yr)`}
+                  onClick={allActivities.length > 0 ? () => setOpenPanel({ type: 'activity' }) : undefined}
+                />
+              )}
+            </div>
+            {loading ? (
+              <div className="space-y-2">
+                {[1, 2, 3].map(i => <Skeleton key={i} className="h-3 w-full" />)}
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <CadenceBar label="7 days" count={cadence.last7} total={Math.max(cadence.last365, 1)} />
+                <CadenceBar label="90 days" count={cadence.last90} total={Math.max(cadence.last365, 1)} />
+                <CadenceBar label="1 year" count={cadence.last365} total={Math.max(cadence.last365, 1)} />
+              </div>
+            )}
+          </section>
 
           {/* Current Modules — which Maxio subscription lines are active
               right now, deduped by module/item name. Distinct from the
@@ -646,22 +641,6 @@ export default function AccountView({ accountId, onBack }) {
               />
             )}
           </section>
-
-          {/* Activity & Engagement */}
-          <section>
-            <SectionLabel>Activity &amp; Engagement</SectionLabel>
-            {loading ? (
-              <div className="space-y-2">
-                {[1, 2, 3].map(i => <Skeleton key={i} className="h-3 w-full" />)}
-              </div>
-            ) : (
-              <div className="space-y-1.5">
-                <CadenceBar label="7 days" count={cadence.last7} total={Math.max(cadence.last365, 1)} />
-                <CadenceBar label="90 days" count={cadence.last90} total={Math.max(cadence.last365, 1)} />
-                <CadenceBar label="1 year" count={cadence.last365} total={Math.max(cadence.last365, 1)} />
-              </div>
-            )}
-          </section>
         </div>
       </div>
 
@@ -703,6 +682,7 @@ export default function AccountView({ accountId, onBack }) {
         columns={MAXIO_COLUMNS}
         rows={maxioBilling.lines}
         rowKey="id"
+        chart={<MaxioArrChart data={maxioArrSeries} />}
       />
       <TicketListPanel
         tickets={openPanel?.type === 'tickets' ? externalData.tickets : null}

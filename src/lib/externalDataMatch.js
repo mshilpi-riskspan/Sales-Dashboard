@@ -129,3 +129,24 @@ export function buildMaxioBilling({ customers, contracts, transactions, items, a
 
   return { matchedCustomers, arr, nextRenewalDate, lines };
 }
+
+// Replays buildMaxioBilling's same "isActive" test (start_date <= X <=
+// end_date, not cancelled) at each historical month-end instead of just
+// "today", to chart how ARR has grown/shrunk over time. Caveat: a cancelled
+// line has no cancellation date in this data — it's either fully in or
+// fully out of its whole start_date-end_date span, so a mid-span
+// cancellation shows as ARR dropping at that line's original end_date, not
+// the actual cancellation date.
+export function buildMaxioArrSeries(lines, months = 24) {
+  const now = new Date();
+  const series = [];
+  for (let i = months - 1; i >= 0; i--) {
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
+    const cutoff = monthEnd.toISOString().slice(0, 10);
+    const arr = lines
+      .filter((l) => !l.cancelled && l.start_date && l.start_date <= cutoff && (!l.end_date || l.end_date >= cutoff))
+      .reduce((sum, l) => sum + (Number(l.home_arr_amount) || 0), 0);
+    series.push({ label: monthEnd.toLocaleDateString('en-US', { month: 'short', year: '2-digit' }), arr });
+  }
+  return series;
+}

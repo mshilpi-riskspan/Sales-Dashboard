@@ -4,10 +4,11 @@ import SlidePanel from '../../components/common/SlidePanel';
 // (DaaS/RaaS datasets, historical Batch Pipelines), where a third drill
 // level would show nothing new. `columns` is [{key, label, render?}], same
 // shape as src/components/common/DataTable.jsx's column defs.
-export default function SimpleTablePanel({ open, onClose, title, subtitle, columns, rows, rowKey = 'key' }) {
+export default function SimpleTablePanel({ open, onClose, title, subtitle, columns, rows, rowKey = 'key', chart = null }) {
   return (
     <SlidePanel open={open} onClose={onClose} title={title} subtitle={subtitle} width={640}>
       <div className="p-4 overflow-x-auto">
+        {chart}
         {(!rows || rows.length === 0) ? (
           <p className="text-xs text-rs-muted">No data available.</p>
         ) : (

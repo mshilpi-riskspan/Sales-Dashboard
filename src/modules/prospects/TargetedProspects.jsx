@@ -89,6 +89,7 @@ function buildRollups(targetAccounts, openOpps, wonOpps, activities) {
     return {
       account,
       openOpps: openForAcct,
+      wonOpps: wonForAcct,
       hasOpenOpp: openForAcct.length > 0,
       furthestStage,
       openArr: openForAcct.reduce((s, o) => s + (o.Annual_Recurring_Revenue_ARR__c ?? o.Amount ?? 0), 0),
@@ -97,6 +98,16 @@ function buildRollups(targetAccounts, openOpps, wonOpps, activities) {
       lastActivityDate: activityDates[0] || null,
     };
   });
+}
+
+// Account has no Line_of_Business__c of its own — it lives on the account's
+// opportunities — so match the same way useRepFilter does for opp-based
+// pages: any open or won opp on this account tagged with the selected LOB
+// (Edge Platform bucket also covers Valuation, same as useRepFilter.js).
+function matchesLob(rollup, selectedLob) {
+  if (selectedLob === 'all') return true;
+  const lobValues = selectedLob === 'Edge Platform' ? ['Edge Platform', 'Valuation'] : [selectedLob];
+  return [...rollup.openOpps, ...rollup.wonOpps].some((o) => lobValues.includes(o.Line_of_Business__c));
 }
 
 function bucketize(rollups) {
@@ -329,7 +340,7 @@ function RepBreakdown({ rollups }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function TargetedProspects() {
-  const { selectedRep, triggerRefresh } = useDashboard();
+  const { selectedRep, selectedLob, triggerRefresh } = useDashboard();
   const [activeAccountId, setActiveAccountId] = useState(null);
 
   const accountsQ = useSalesforceQuery(fetchAllAccounts);
@@ -356,9 +367,11 @@ export default function TargetedProspects() {
   );
 
   const scopedRollups = useMemo(() => {
-    if (selectedRep === 'all') return allRollups;
-    return allRollups.filter((r) => r.account.OwnerId === selectedRep);
-  }, [allRollups, selectedRep]);
+    let result = allRollups;
+    if (selectedRep !== 'all') result = result.filter((r) => r.account.OwnerId === selectedRep);
+    if (selectedLob !== 'all') result = result.filter((r) => matchesLob(r, selectedLob));
+    return result;
+  }, [allRollups, selectedRep, selectedLob]);
 
   const { inPipeline, engagedNoDeal, noOutreach } = useMemo(() => bucketize(scopedRollups), [scopedRollups]);
 

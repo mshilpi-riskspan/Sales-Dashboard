@@ -2,11 +2,12 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { MagnifyingGlassIcon, ChevronDownIcon, Squares2X2Icon } from '@heroicons/react/24/outline';
 import { useSalesforceQuery } from '../../hooks/useSalesforceQuery';
 import { useDashboard } from '../../context/DashboardContext';
-import { fetchAllAccounts, fetchOpenOpportunities } from '../../datasources/salesforce';
+import { fetchAllAccounts, fetchOpenOpportunities, fetchLastActivityByAccount } from '../../datasources/salesforce';
 import { fetchSnowflakeClients, fetchCurrentClientsSnowflakeData } from '../../datasources/snowflake';
 import { fetchFreshdeskData } from '../../datasources/freshdesk';
 import { fetchJiraData } from '../../datasources/jira';
 import { fetchAstronomerData } from '../../datasources/astronomer';
+import { fetchMaxioData } from '../../datasources/maxio';
 import { mergeCurrentClients } from '../../lib/currentClientsMerge';
 import { isClientTier, isCurrentClient, isTrackedTier } from '../../config/accountTier';
 import { COLUMN_CATALOG, COLUMN_GROUPS, DEFAULT_VISIBLE_COLUMNS } from './columnCatalog';
@@ -222,7 +223,7 @@ function compareValues(a, b) {
 }
 
 export default function CurrentClientsPage() {
-  const { triggerRefresh, selectedRep } = useDashboard();
+  const { triggerRefresh, selectedRep, selectedLob } = useDashboard();
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -242,12 +243,14 @@ export default function CurrentClientsPage() {
   const clientsQ = useSalesforceQuery(fetchSnowflakeClients);
   const snowflakeDataQ = useSalesforceQuery(fetchCurrentClientsSnowflakeData);
   const openOppsQ = useSalesforceQuery(fetchOpenOpportunities);
+  const lastActivityQ = useSalesforceQuery(fetchLastActivityByAccount);
   // Best-effort, non-blocking — a Freshdesk/Jira/Astronomer hiccup shouldn't
   // blank out the whole page; mergeCurrentClients already treats missing
   // data as "no match" rather than an error.
   const freshdeskQ = useSalesforceQuery(fetchFreshdeskData);
   const jiraQ = useSalesforceQuery(fetchJiraData);
   const astroQ = useSalesforceQuery(fetchAstronomerData);
+  const maxioQ = useSalesforceQuery(fetchMaxioData);
 
   const loading = accountsQ.loading || clientsQ.loading || snowflakeDataQ.loading || openOppsQ.loading;
   const error = accountsQ.error || clientsQ.error || snowflakeDataQ.error || openOppsQ.error;
@@ -270,6 +273,21 @@ export default function CurrentClientsPage() {
     return map;
   }, [openOppsQ.data]);
 
+  // Account has no Line_of_Business__c of its own — it lives on the
+  // account's open opportunities — so the LOB sidebar filter (applied on
+  // every other page via useRepFilter) scopes this page to accounts with at
+  // least one open opp in that LOB. Same Edge Platform+Valuation combo
+  // useRepFilter.js uses.
+  const lobAccountIds = useMemo(() => {
+    if (selectedLob === 'all') return null;
+    const lobValues = selectedLob === 'Edge Platform' ? ['Edge Platform', 'Valuation'] : [selectedLob];
+    const ids = new Set();
+    for (const opp of (openOppsQ.data || [])) {
+      if (opp.AccountId && lobValues.includes(opp.Line_of_Business__c)) ids.add(opp.AccountId);
+    }
+    return ids;
+  }, [openOppsQ.data, selectedLob]);
+
   // The expensive step is mergeCurrentClients — it runs Freshdesk/Jira/
   // Astronomer matching per account — so narrow the input *before* merging,
   // not after. Default (no search): only tracked Tier 1-3 Client/Prospect
@@ -287,10 +305,11 @@ export default function CurrentClientsPage() {
       rows = rows.filter((a) => isTrackedTier(a.AccountType_Tier__c));
     }
     if (selectedRep !== 'all') rows = rows.filter((a) => a.OwnerId === selectedRep);
+    if (lobAccountIds) rows = rows.filter((a) => lobAccountIds.has(a.Id));
     rows = rows.filter((a) => matchesTierFilter(a, filterTier));
     if (filterIndustry !== 'all') rows = rows.filter((a) => a.Industry === filterIndustry);
     return rows.length > MERGE_CAP ? rows.slice(0, MERGE_CAP) : rows;
-  }, [accountsQ.data, searchQuery, selectedRep, filterTier, filterIndustry]);
+  }, [accountsQ.data, searchQuery, selectedRep, lobAccountIds, filterTier, filterIndustry]);
 
   const isMergeCapped = useMemo(() => {
     if (!accountsQ.data) return false;
@@ -301,8 +320,9 @@ export default function CurrentClientsPage() {
     } else {
       rows = rows.filter((a) => isTrackedTier(a.AccountType_Tier__c));
     }
+    if (lobAccountIds) rows = rows.filter((a) => lobAccountIds.has(a.Id));
     return rows.length > MERGE_CAP;
-  }, [accountsQ.data, searchQuery]);
+  }, [accountsQ.data, searchQuery, lobAccountIds]);
 
   const allRows = useMemo(() => {
     if (!clientsQ.data || !snowflakeDataQ.data) return [];
@@ -314,8 +334,10 @@ export default function CurrentClientsPage() {
       freshdeskData: freshdeskQ.data,
       jiraData: jiraQ.data,
       astroData: astroQ.data,
+      maxioData: maxioQ.data,
+      lastActivityByAccount: lastActivityQ.data,
     });
-  }, [candidateAccounts, clientsQ.data, snowflakeDataQ.data, openOppCounts, freshdeskQ.data, jiraQ.data, astroQ.data]);
+  }, [candidateAccounts, clientsQ.data, snowflakeDataQ.data, openOppCounts, freshdeskQ.data, jiraQ.data, astroQ.data, maxioQ.data, lastActivityQ.data]);
 
   // Tier/Industry options come from the full tracked-tier universe (not the
   // current search-narrowed candidate set), so the dropdowns stay stable

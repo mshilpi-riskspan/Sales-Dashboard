@@ -429,7 +429,7 @@ export async function fetchAllAccounts() {
     `SELECT Id, Name, AccountType_Tier__c, Industry,
      Sales_Lead__r.Name, Current_ARR__c, saasoptics__arr_at_end_of_month__c,
      LastActivityDate, OwnerId, Owner.Name,
-     BillingCity, BillingState, Type
+     BillingCity, BillingState, Type, Website, Phone, AnnualRevenue
      FROM Account WHERE Name != null ORDER BY Name ASC`
   );
 }
@@ -458,6 +458,41 @@ export async function fetchTargetedProspectActivities(accountIds) {
   const result = { tasks, events };
   cache.set(cacheKey, { data: result, timestamp: Date.now() });
   return result;
+}
+
+// Account.LastActivityDate is a stale/unreliable rollup in this org (same
+// reason AccountView.jsx derives its own "Last Activity" from actual fetched
+// Task/Event rows instead of trusting that field) — this gives the bulk
+// Accounts page the same accuracy without a per-account round trip. Can't
+// use a GROUP BY WhatId, MAX(ActivityDate) aggregate — Salesforce rejects
+// MAX() on Task.ActivityDate ("field ActivityDate does not support aggregate
+// operator MAX") — so this pulls raw WhatId/date rows for the same 1-year
+// window AccountView uses and reduces to a max per account in JS instead.
+export async function fetchLastActivityByAccount() {
+  const cacheKey = 'accounts:lastActivity';
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+
+  const [taskRows, eventRows] = await Promise.all([
+    queryAll(`SELECT WhatId, ActivityDate FROM Task WHERE WhatId != null AND ActivityDate = LAST_N_DAYS:365`),
+    queryAll(`SELECT WhatId, StartDateTime FROM Event WHERE WhatId != null AND StartDateTime = LAST_N_DAYS:365`),
+  ]);
+
+  const map = new Map();
+  for (const row of taskRows) {
+    if (!row.WhatId || !row.ActivityDate) continue;
+    const existing = map.get(row.WhatId);
+    if (!existing || row.ActivityDate > existing) map.set(row.WhatId, row.ActivityDate);
+  }
+  for (const row of eventRows) {
+    if (!row.WhatId || !row.StartDateTime) continue;
+    const dateStr = row.StartDateTime.slice(0, 10);
+    const existing = map.get(row.WhatId);
+    if (!existing || dateStr > existing) map.set(row.WhatId, dateStr);
+  }
+
+  cache.set(cacheKey, { data: map, timestamp: Date.now() });
+  return map;
 }
 
 export async function fetchAccountOpportunities(accountId) {

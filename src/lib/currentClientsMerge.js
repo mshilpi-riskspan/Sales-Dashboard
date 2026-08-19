@@ -7,7 +7,7 @@
 // AccountMapping.jsx requires an explicit human Accept before it counts.
 import { looksLikeMatch, normalizeForTagMatch } from './accountMatch';
 import { CLIENT_TAG_TO_ACCOUNT_ID } from '../config/clientTagMap';
-import { matchFreshdeskTickets, matchJiraIssues, matchAstroDags, knownTagsForAccount } from './externalDataMatch';
+import { matchFreshdeskTickets, matchJiraIssues, matchAstroDags, knownTagsForAccount, buildMaxioBilling } from './externalDataMatch';
 import { resolveClientMappingStatuses } from './accountMapping';
 
 // Inverted: accountId -> Set<tag> (several tags can map to one account, e.g.
@@ -142,7 +142,25 @@ function aggregateAstroLive(dags) {
   };
 }
 
-export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData, openOppCounts, freshdeskData, jiraData, astroData }) {
+// Reuses buildMaxioBilling (src/lib/externalDataMatch.js) — same
+// sf_id-primary/name-fallback matching AccountView.jsx uses per account,
+// just called once per row here against the bulk-fetched Maxio payload.
+function aggregateMaxio({ customers, contracts, transactions, items }, accountId, matchName) {
+  if (!customers?.length) {
+    return { MaxioArr: null, MaxioNextRenewal: null, MaxioActiveLines: null };
+  }
+  const { arr, nextRenewalDate, lines } = buildMaxioBilling({
+    customers, contracts: contracts || [], transactions: transactions || [], items: items || [], accountId, matchName,
+  });
+  const activeLines = lines.filter((l) => l.isActive).length;
+  return {
+    MaxioArr: activeLines ? arr : null,
+    MaxioNextRenewal: nextRenewalDate,
+    MaxioActiveLines: activeLines || null,
+  };
+}
+
+export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData, openOppCounts, freshdeskData, jiraData, astroData, maxioData, lastActivityByAccount }) {
   const overrideMap = loadOverrideMap();
   const accountsById = new Map((accounts || []).map((a) => [a.Id, a]));
 
@@ -218,7 +236,10 @@ export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData,
         SalesLead: a.Sales_Lead__r?.Name || null,
         Current_ARR__c: a.Current_ARR__c,
         ArrEndOfMonth: a.saasoptics__arr_at_end_of_month__c ?? null,
-        LastActivityDate: a.LastActivityDate,
+        // Account.LastActivityDate is a stale rollup in this org — prefer the
+        // computed value (actual Task/Event max date, same source AccountView
+        // uses) when available, falling back to the SF field otherwise.
+        LastActivityDate: lastActivityByAccount?.get(a.Id) ?? a.LastActivityDate ?? null,
         OwnerId: a.OwnerId,
         OwnerName: a.Owner?.Name || null,
         BillingCity: a.BillingCity,
@@ -231,28 +252,44 @@ export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData,
         UsageScore: h?.USAGE_SCORE ?? null,
         CommercialScore: h?.COMMERCIAL_SCORE ?? null,
 
+        Website: a.Website ?? null,
+        Phone: a.Phone ?? null,
+        AnnualRevenue: a.AnnualRevenue ?? null,
+
         ApiCalls30d: u?.API_CALLS_30D ?? null,
         Forecasts30d: u?.FORECASTS_30D ?? null,
         ModelExecutions30d: u?.MODEL_EXECUTIONS_30D ?? null,
         ModelFailures30d: u?.MODEL_FAILURES_30D ?? null,
+        ScenarioRuns30d: u?.SCENARIO_RUNS_30D ?? null,
+        StressTests30d: u?.STRESS_TESTS_30D ?? null,
+        ForecastLoans30d: u?.FORECAST_LOANS_30D ?? null,
+        ForecastSecurities30d: u?.FORECAST_SECURITIES_30D ?? null,
+        AvgLatencyMs30d: u?.AVG_LATENCY_MS_30D ?? null,
         DistinctUsers30d: du?.DISTINCT_USERS_30D ?? null,
+        UserDistinctUsers30d: du?.USER_DISTINCT_USERS_30D ?? null,
 
         OpenTickets: s?.OPEN_TICKETS ?? null,
         EscalatedTickets: s?.ESCALATED_TICKETS ?? null,
         CriticalTickets: s?.CRITICAL_TICKETS ?? null,
+        HighPriorityTickets: s?.HIGH_PRIORITY_TICKETS ?? null,
         AvgFirstResponseHours: s?.AVG_FIRST_RESPONSE_HOURS ?? null,
+        AvgResolutionHours: s?.AVG_RESOLUTION_HOURS ?? null,
 
         SnowflakeARR: cm?.ARR ?? null,
         MRR: cm?.MRR ?? null,
+        ContractValue: cm?.CONTRACT_VALUE ?? null,
         DaysToRenewal: cm?.DAYS_TO_RENEWAL ?? null,
+        RenewalDateNearest: cm?.RENEWAL_DATE_NEAREST ?? null,
         ActiveContracts: cm?.ACTIVE_CONTRACTS ?? null,
         OpenInvoiceCount: cm?.OPEN_INVOICE_COUNT ?? null,
+        OpenInvoiceAmount: cm?.OPEN_INVOICE_AMOUNT ?? null,
 
         ...aggregateDaas(knownTags, matchName, daasRows),
         ...aggregateBatch(knownTags, matchName, batchRows),
         ...aggregateFreshdesk(ticketsForAccount),
         ...aggregateJira(issuesForAccount),
         ...aggregateAstroLive(dagsForAccount),
+        ...aggregateMaxio(maxioData || {}, a.Id, matchName),
 
         _snowflakeMatchStatus: resolution ? resolution.matchStatus : 'unmatched',
       };

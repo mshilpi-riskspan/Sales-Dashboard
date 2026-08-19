@@ -52,6 +52,9 @@ export const COLUMN_CATALOG = [
   { key: 'OwnerName', label: 'Owner', group: 'Salesforce' },
   { key: 'BillingCity', label: 'City', group: 'Salesforce' },
   { key: 'BillingState', label: 'State', group: 'Salesforce' },
+  { key: 'Website', label: 'Website', group: 'Salesforce' },
+  { key: 'Phone', label: 'Phone', group: 'Salesforce' },
+  { key: 'AnnualRevenue', label: 'Annual Revenue', group: 'Salesforce', render: (r) => formatMoney(r.AnnualRevenue) },
   { key: 'LastActivityDate', label: 'Last Activity', group: 'Salesforce', render: (r) => relativeDate(r.LastActivityDate) },
   {
     key: '_snowflakeMatchStatus',
@@ -79,14 +82,39 @@ export const COLUMN_CATALOG = [
   { key: 'Forecasts30d', label: 'Forecast Runs (30d)', group: 'Usage', render: (r) => formatNum(r.Forecasts30d) },
   { key: 'ModelExecutions30d', label: 'Model Executions (30d)', group: 'Usage', render: (r) => formatNum(r.ModelExecutions30d) },
   { key: 'ModelFailures30d', label: 'Model Failures (30d)', group: 'Usage', render: (r) => formatNum(r.ModelFailures30d) },
+  { key: 'ScenarioRuns30d', label: 'Scenario Runs (30d)', group: 'Usage', render: (r) => formatNum(r.ScenarioRuns30d) },
+  { key: 'StressTests30d', label: 'Stress Tests (30d)', group: 'Usage', render: (r) => formatNum(r.StressTests30d) },
+  { key: 'ForecastLoans30d', label: 'Forecast Loans (30d)', group: 'Usage', render: (r) => formatNum(r.ForecastLoans30d) },
+  { key: 'ForecastSecurities30d', label: 'Forecast Securities (30d)', group: 'Usage', render: (r) => formatNum(r.ForecastSecurities30d) },
+  { key: 'AvgLatencyMs30d', label: 'Avg API Latency (ms)', group: 'Usage', render: (r) => formatNum(r.AvgLatencyMs30d) },
   { key: 'DistinctUsers30d', label: 'Distinct Users (30d)', group: 'Usage', render: (r) => formatNum(r.DistinctUsers30d) },
+  { key: 'UserDistinctUsers30d', label: 'Distinct Users, excl. admin/batch (30d)', group: 'Usage', render: (r) => formatNum(r.UserDistinctUsers30d) },
 
-  // Commercial
+  // Commercial (Snowflake)
   { key: 'SnowflakeARR', label: 'ARR (Snowflake)', group: 'Commercial', render: (r) => formatMoney(r.SnowflakeARR) },
   { key: 'MRR', label: 'MRR', group: 'Commercial', render: (r) => formatMoney(r.MRR) },
+  { key: 'ContractValue', label: 'Contract Value', group: 'Commercial', render: (r) => formatMoney(r.ContractValue) },
   { key: 'DaysToRenewal', label: 'Days to Renewal', group: 'Commercial', render: (r) => formatNum(r.DaysToRenewal) },
+  { key: 'RenewalDateNearest', label: 'Nearest Renewal Date', group: 'Commercial', render: (r) => relativeDate(r.RenewalDateNearest) },
   { key: 'ActiveContracts', label: 'Active Contracts', group: 'Commercial', render: (r) => formatNum(r.ActiveContracts) },
   { key: 'OpenInvoiceCount', label: 'Open Invoices', group: 'Commercial', render: (r) => formatNum(r.OpenInvoiceCount) },
+  { key: 'OpenInvoiceAmount', label: 'Open Invoice Amount', group: 'Commercial', render: (r) => formatMoney(r.OpenInvoiceAmount) },
+
+  // Support (Snowflake) — FACT_SUPPORT_METRICS, distinct from the raw
+  // Freshdesk ticket group below (same underlying system, aggregated
+  // upstream in Snowflake vs. matched live here from the Freshdesk API).
+  { key: 'OpenTickets', label: 'Open Tickets (Snowflake)', group: 'Support (Snowflake)', render: (r) => formatNum(r.OpenTickets) },
+  { key: 'EscalatedTickets', label: 'Escalated (Snowflake)', group: 'Support (Snowflake)', render: (r) => formatNum(r.EscalatedTickets) },
+  { key: 'CriticalTickets', label: 'Critical (Snowflake)', group: 'Support (Snowflake)', render: (r) => formatNum(r.CriticalTickets) },
+  { key: 'HighPriorityTickets', label: 'High Priority (Snowflake)', group: 'Support (Snowflake)', render: (r) => formatNum(r.HighPriorityTickets) },
+  { key: 'AvgFirstResponseHours', label: 'Avg First Response (hrs)', group: 'Support (Snowflake)', render: (r) => formatNum(r.AvgFirstResponseHours) },
+  { key: 'AvgResolutionHours', label: 'Avg Resolution (hrs)', group: 'Support (Snowflake)', render: (r) => formatNum(r.AvgResolutionHours) },
+
+  // Billing (Maxio) — mirrors the same buildMaxioBilling logic used on
+  // AccountView's Maxio panel, run once per row against the bulk payload.
+  { key: 'MaxioArr', label: 'ARR (Maxio)', group: 'Billing (Maxio)', render: (r) => (r.MaxioArr == null ? '—' : `$${Math.round(r.MaxioArr).toLocaleString()}`) },
+  { key: 'MaxioNextRenewal', label: 'Next Renewal (Maxio)', group: 'Billing (Maxio)', render: (r) => relativeDate(r.MaxioNextRenewal) },
+  { key: 'MaxioActiveLines', label: 'Active Contract Lines (Maxio)', group: 'Billing (Maxio)', render: (r) => formatNum(r.MaxioActiveLines) },
 
   // DaaS/RaaS
   { key: 'DaasDatasetCount', label: 'DaaS Datasets', group: 'DaaS/RaaS', render: (r) => formatNum(r.DaasDatasetCount) },

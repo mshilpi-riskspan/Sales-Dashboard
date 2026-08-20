@@ -14,6 +14,7 @@ import UpcomingRenewalsList from './UpcomingRenewalsList';
 import ChurnedClientsList from './ChurnedClientsList';
 import ChurnRateChart from './ChurnRateChart';
 import AtRiskClients from './AtRiskClients';
+import RenewalCalendarChart from './RenewalCalendarChart';
 import ChurnReasonBreakdown from './ChurnReasonBreakdown';
 
 function formatARR(v) {
@@ -59,7 +60,20 @@ export default function RenewalsPage() {
       a => !sfIdSet.has(a.Id) && isCurrentClientType(a.Type)
     );
 
+    // Accounts with an open Renewal Pending SF opp — loosen gate to include
+    // accounts whose Maxio lines have just expired (e.g. Cross Country Jun 19)
+    const renewalPendingIds = new Set(
+      (renewalOppsQ.data ?? [])
+        .filter(o => o.StageName === 'Renewal Pending')
+        .map(o => o.AccountId)
+    );
+
     const map = new Map();
+    // Track which Maxio customer IDs are already claimed by a direct sf_id match
+    // so fuzzy fallback cannot match the same underlying customer to a second SF account
+    // (e.g. Federal Housing Finance Agency + FHFA both fuzzy-matching the same Maxio customer).
+    const claimedCustomerIds = new Set();
+
     for (const acct of [...directMatchAccounts, ...platformClientAccounts]) {
       if (map.has(acct.Id)) continue;
       const useFuzzy = !sfIdSet.has(acct.Id);
@@ -71,7 +85,12 @@ export default function RenewalsPage() {
         accountId: acct.Id,
         matchName: useFuzzy ? acct.Name : null,
       });
-      if (billing.arr > 0 || billing.lines.some(l => l.isActive)) {
+      // Skip if the fuzzy match resolved to a Maxio customer already owned by a direct-match account
+      if (useFuzzy && billing.matchedCustomers.some(c => claimedCustomerIds.has(c.id))) continue;
+      const hasActive = billing.arr > 0 || billing.lines.some(l => l.isActive);
+      const hasAnyLines = billing.lines.length > 0;
+      if (hasActive || (renewalPendingIds.has(acct.Id) && hasAnyLines)) {
+        for (const c of billing.matchedCustomers) claimedCustomerIds.add(c.id);
         map.set(acct.Id, { ...billing, accountName: acct.Name, accountId: acct.Id, owner: acct.Owner });
       }
     }
@@ -90,34 +109,70 @@ export default function RenewalsPage() {
     for (const [accountId, billing] of maxioBillingByAccountId) {
       const { lines, arr, nextRenewalDate, accountName, owner } = billing;
       const activeLines = lines.filter(l => l.isActive).sort((a, b) => (a.end_date || "").localeCompare(b.end_date || ""));
-      if (!activeLines.length) continue;
+      const sfOpp = sfOppByAccountId.get(accountId) ?? null;
 
-      const daysUntilRenewal = nextRenewalDate
-        ? differenceInDays(new Date(nextRenewalDate + 'T00:00:00'), today)
+      // For Renewal Pending accounts whose Maxio lines have all expired,
+      // use the SF opp CloseDate + ARR as the row source instead of skipping.
+      const isSfFallback = activeLines.length === 0;
+      if (isSfFallback && !sfOpp) continue;
+
+      const effectiveRenewalDate = isSfFallback ? (sfOpp?.CloseDate ?? null) : nextRenewalDate;
+      const effectiveArr = isSfFallback
+        ? Number(sfOpp?.Annual_Recurring_Revenue_ARR__c ?? sfOpp?.Amount ?? 0)
+        : arr;
+      const effectiveRenewalArr = isSfFallback ? effectiveArr : (
+        activeLines
+          .filter(l => l.end_date === nextRenewalDate)
+          .reduce((s, l) => s + (Number(l.home_arr_amount) || 0), 0)
+      );
+
+      const daysUntilRenewal = effectiveRenewalDate
+        ? differenceInDays(new Date(effectiveRenewalDate + 'T00:00:00'), today)
         : null;
 
       const hasManual = activeLines.some(l => !l.is_autorenewal);
-      const sfOpp = sfOppByAccountId.get(accountId) ?? null;
-
-      // ARR at risk = only the lines whose end_date matches the next renewal date,
-      // not the sum of all active lines (which inflates multi-line accounts like GS).
-      const renewalArr = activeLines
-        .filter(l => l.end_date === nextRenewalDate)
-        .reduce((s, l) => s + (Number(l.home_arr_amount) || 0), 0);
 
       rows.push({
         accountId,
         accountName,
         owner,
-        arr,        // total account ARR — shown in the slide panel
-        renewalArr, // ARR coming up for renewal — shown in the table
-        nextRenewalDate,
+        arr: effectiveArr,
+        renewalArr: effectiveRenewalArr,
+        nextRenewalDate: effectiveRenewalDate,
         daysUntilRenewal,
-        isAutoRenew: !hasManual,
+        isAutoRenew: isSfFallback ? null : !hasManual,
+        allLines: lines,
         activeLines,
         sfOpp,
       });
     }
+    // Append any SF 'Renewal Pending' opps whose account isn't already in the list.
+    // These are clients without a Maxio match that are still tracked in Salesforce.
+    const accountIdsInList = new Set(rows.map(r => r.accountId));
+    for (const opp of filteredRenewalOpps) {
+      if (opp.StageName !== 'Renewal Pending') continue;
+      if (accountIdsInList.has(opp.AccountId)) continue;
+      const arr = Number(opp.Annual_Recurring_Revenue_ARR__c ?? opp.Amount ?? 0);
+      const nextRenewalDate = opp.CloseDate ?? null;
+      const daysUntilRenewal = nextRenewalDate
+        ? differenceInDays(new Date(nextRenewalDate + 'T00:00:00'), today)
+        : null;
+      rows.push({
+        accountId: opp.AccountId,
+        accountName: opp['Account.Name'] ?? opp.Account?.Name ?? opp.Name,
+        owner: opp['Owner.Name'] ? { Name: opp['Owner.Name'] } : null,
+        arr,
+        renewalArr: arr,
+        nextRenewalDate,
+        daysUntilRenewal,
+        isAutoRenew: null,
+        activeLines: [],
+        sfOpp: opp,
+        sfOnly: true,
+      });
+      accountIdsInList.add(opp.AccountId);
+    }
+
     return rows.sort((a, b) => (a.nextRenewalDate || '').localeCompare(b.nextRenewalDate || ''));
   }, [maxioBillingByAccountId, filteredRenewalOpps]);
 
@@ -173,8 +228,9 @@ export default function RenewalsPage() {
     const today = new Date();
     const currentYear = today.getFullYear();
 
+    const eoy = String(currentYear) + '-12-31';
     const upcomingArr = renewalRows
-      .filter(r => r.daysUntilRenewal != null && r.daysUntilRenewal >= 0 && r.daysUntilRenewal <= 90)
+      .filter(r => r.nextRenewalDate != null && r.nextRenewalDate >= today.toISOString().slice(0, 10) && r.nextRenewalDate <= eoy)
       .reduce((s, r) => s + (r.renewalArr ?? r.arr ?? 0), 0);
 
     const due30 = renewalRows.filter(r => r.daysUntilRenewal != null && r.daysUntilRenewal >= 0 && r.daysUntilRenewal <= 30).length;
@@ -210,7 +266,7 @@ export default function RenewalsPage() {
     <div>
       {/* KPI strip */}
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <KpiCard title="Renewal ARR (90 days)" value={formatARR(kpis.upcomingArr)} />
+        <KpiCard title="Renewal ARR (EOY)" value={formatARR(kpis.upcomingArr)} />
         <KpiCard title="Renewals Due ≤ 30 days" value={kpis.due30} />
         <KpiCard title="ARR Churned YTD" value={formatARR(kpis.churnedYtd)} />
         <KpiCard title="Auto-Renew %" value={kpis.autoRenewPct != null ? `${kpis.autoRenewPct}%` : '—'} />
@@ -235,6 +291,7 @@ export default function RenewalsPage() {
 
       {activeTab === 'renewals' && (
         <>
+          <RenewalCalendarChart sfOpps={filteredRenewalOpps} />
           <UpcomingRenewalsList rows={renewalRows} />
           <AtRiskClients rows={atRiskRows} />
         </>

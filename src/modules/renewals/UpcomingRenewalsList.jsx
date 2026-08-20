@@ -22,7 +22,7 @@ function SubscriptionPanel({ row, onClose }) {
   if (typeof document === 'undefined') return null;
 
   const totalArr = row?.arr || 0;
-  const lines = row?.activeLines || [];
+  const lines = row?.allLines?.length ? row.allLines : (row?.activeLines || []);
   const renewalDate = row?.nextRenewalDate;
   const daysUntil = row?.daysUntilRenewal;
 
@@ -98,8 +98,16 @@ function SubscriptionPanel({ row, onClose }) {
               <div key={i} className="rounded-xl border border-rs-border bg-white overflow-hidden">
                 {/* Line header */}
                 <div className="flex items-center justify-between px-4 py-3 border-b border-rs-border bg-rs-surface">
-                  <span className="font-semibold text-sm text-rs-text">{line.itemName || 'Module'}</span>
-                  <span className="text-sm font-bold text-rs-text">{formatARR(Number(line.home_arr_amount))}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-semibold text-sm text-rs-text truncate">{line.itemName || 'Module'}</span>
+                    {line.cancelled
+                      ? <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-white bg-red-400 px-1.5 py-0.5 rounded">Cancelled</span>
+                      : !line.isActive
+                        ? <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-white bg-amber-400 px-1.5 py-0.5 rounded">Expired</span>
+                        : null
+                    }
+                  </div>
+                  <span className={"text-sm font-bold shrink-0 " + (line.isActive ? "text-rs-text" : "text-rs-muted line-through")}>{formatARR(Number(line.home_arr_amount))}</span>
                 </div>
                 {/* Line details */}
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 px-4 py-3">
@@ -186,9 +194,12 @@ export default function UpcomingRenewalsList({ rows }) {
                   </td>
                   <td className="px-4 py-2.5 font-semibold text-rs-text">{formatARR(row.renewalArr ?? row.arr)}</td>
                   <td className="px-4 py-2.5">
-                    <span className={`text-xs font-medium ${row.isAutoRenew ? 'text-green-700' : 'text-orange-700'}`}>
-                      {row.isAutoRenew ? 'Auto' : 'Manual'}
-                    </span>
+                    {row.isAutoRenew == null
+                      ? <span className="text-xs text-rs-muted">—</span>
+                      : <span className={`text-xs font-medium ${row.isAutoRenew ? 'text-green-700' : 'text-orange-700'}`}>
+                          {row.isAutoRenew ? 'Auto' : 'Manual'}
+                        </span>
+                    }
                   </td>
                   <td className="px-4 py-2.5 text-xs">
                     {row.sfOpp

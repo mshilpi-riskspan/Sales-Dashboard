@@ -1,5 +1,6 @@
 import FirmGoals from '../modules/goals/FirmGoals';
 import CurrentClientsPage from '../modules/clients/CurrentClientsPage';
+import RenewalsPage from '../modules/renewals/RenewalsPage';
 import TargetedProspects from '../modules/prospects/TargetedProspects';
 import PipelineByStage from '../modules/pipeline/PipelineByStage';
 import PipelineByMonth from '../modules/pipeline/PipelineByMonth';
@@ -23,6 +24,13 @@ export const NAV_ITEMS = [
     label: 'Accounts',
     icon: 'BuildingOffice2Icon',
     component: CurrentClientsPage,
+    filters: ['salesperson'],
+  },
+  {
+    id: 'renewals',
+    label: 'Renewals & Churn',
+    icon: 'ArrowPathIcon',
+    component: RenewalsPage,
     filters: ['salesperson'],
   },
   {

@@ -123,7 +123,21 @@ export function buildMaxioBilling({ customers, contracts, transactions, items, a
     }))
     .sort((a, b) => (b.end_date || '').localeCompare(a.end_date || ''));
 
-  const activeLines = lines.filter((l) => l.isActive);
+  // When a client renews early, Maxio creates a new line (later start_date)
+  // while the old line is still technically active (end_date >= today).
+  // Keep only the newest start_date per item so the superseded term doesn't
+  // double-count ARR or pull the nextRenewalDate back to the old end_date.
+  const allActive = lines.filter((l) => l.isActive);
+  const newestByItem = new Map();
+  for (const l of allActive) {
+    const key = l.item ?? l.itemName ?? l.id;
+    const existing = newestByItem.get(key);
+    if (!existing || (l.start_date || '') > (existing.start_date || '')) {
+      newestByItem.set(key, l);
+    }
+  }
+  const activeLines = Array.from(newestByItem.values());
+
   const arr = activeLines.reduce((sum, l) => sum + (Number(l.home_arr_amount) || 0), 0);
   const nextRenewalDate = activeLines.reduce((min, l) => (l.end_date && (!min || l.end_date < min) ? l.end_date : min), null);
 

@@ -532,3 +532,43 @@ export async function fetchAllReps() {
     .map(([id, name]) => ({ id, name }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
+
+export async function fetchOpenRenewalOpps() {
+  const cacheKey = 'opps:renewals:open';
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+  const data = await queryAll(
+    `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c,
+     OwnerId, Owner.Name, AccountId, Account.Name,
+     CloseDate, CreatedDate, IsClosed, IsWon,
+     Type, Line_of_Business__c, Primary_Module__c, ForecastCategoryName, NextStep
+     FROM Opportunity
+     WHERE Type = 'Renewal'
+     AND IsClosed = false
+     ORDER BY CloseDate ASC`
+  );
+  cache.set(cacheKey, { data, timestamp: Date.now() });
+  return data;
+}
+
+export async function fetchClosedLostRenewalOpps() {
+  const year = new Date().getFullYear();
+  const cacheKey = `opps:renewals:churned:${year}`;
+  const cached = cache.get(cacheKey);
+  if (isCacheValid(cached)) return cached.data;
+  const data = await queryAll(
+    `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c,
+     OwnerId, Owner.Name, AccountId, Account.Name,
+     CloseDate, LastStageChangeDate, IsClosed, IsWon,
+     Loss_Reason__c, Closed_Lost_Reason_Explanation__c,
+     Type, Line_of_Business__c
+     FROM Opportunity
+     WHERE Type = 'Renewal'
+     AND IsClosed = true
+     AND IsWon = false
+     AND CloseDate >= ${year - 1}-01-01
+     ORDER BY CloseDate DESC`
+  );
+  cache.set(cacheKey, { data, timestamp: Date.now() });
+  return data;
+}

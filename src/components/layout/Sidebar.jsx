@@ -1,7 +1,7 @@
-import { ChartBarIcon, UserGroupIcon, MegaphoneIcon, CalendarIcon, CalendarDaysIcon, TrophyIcon, ExclamationTriangleIcon, CurrencyDollarIcon, FlagIcon, BuildingOffice2Icon, UserPlusIcon, ArrowsRightLeftIcon, TableCellsIcon } from '@heroicons/react/24/outline';
+import { ChartBarIcon, UserGroupIcon, MegaphoneIcon, CalendarIcon, CalendarDaysIcon, TrophyIcon, ExclamationTriangleIcon, CurrencyDollarIcon, FlagIcon, BuildingOffice2Icon, UserPlusIcon, ArrowsRightLeftIcon, TableCellsIcon, ArrowPathIcon } from '@heroicons/react/24/outline';
 import { useDashboard } from '../../context/DashboardContext';
 
-const ICON_MAP = { ChartBarIcon, UserGroupIcon, MegaphoneIcon, CalendarIcon, CalendarDaysIcon, TrophyIcon, ExclamationTriangleIcon, CurrencyDollarIcon, FlagIcon, BuildingOffice2Icon, UserPlusIcon, ArrowsRightLeftIcon, TableCellsIcon };
+const ICON_MAP = { ChartBarIcon, UserGroupIcon, MegaphoneIcon, CalendarIcon, CalendarDaysIcon, TrophyIcon, ExclamationTriangleIcon, CurrencyDollarIcon, FlagIcon, BuildingOffice2Icon, UserPlusIcon, ArrowsRightLeftIcon, TableCellsIcon, ArrowPathIcon };
 
 const LOB_OPTIONS = [
   { value: 'all',           label: 'All' },

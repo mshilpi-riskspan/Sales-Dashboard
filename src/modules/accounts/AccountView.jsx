@@ -294,6 +294,7 @@ export default function AccountView({ accountId, onBack }) {
   });
 
   const openOpps = (opps || []).filter(o => !o.IsClosed);
+  const openOppsCount = openOpps.filter(o => o.StageName !== 'Client Prospecting').length;
   const wonOpps = (opps || []).filter(o => o.IsWon);
   const wonARR = wonOpps.reduce((s, o) => s + (o.Annual_Recurring_Revenue_ARR__c || 0), 0);
 
@@ -432,7 +433,7 @@ export default function AccountView({ accountId, onBack }) {
                   sublabel={maxioBilling.nextRenewalDate ? relativeDate(maxioBilling.nextRenewalDate) : undefined}
                   onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
                 />
-                <StatTile label="Open Deals" value={openOpps.length} onClick={openOpps.length > 0 ? () => setOpenPanel({ type: 'deals' }) : undefined} />
+                <StatTile label="Open Deals" value={openOppsCount} onClick={openOpps.length > 0 ? () => setOpenPanel({ type: 'deals' }) : undefined} />
               </div>
             )}
             {!loading && wonOpps.length > 0 && (

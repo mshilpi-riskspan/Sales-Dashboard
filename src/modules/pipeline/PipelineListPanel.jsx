@@ -78,7 +78,7 @@ export default function PipelineListPanel({ deals, onClose, onDealClick, title =
       open={!!deals}
       onClose={onClose}
       title={title}
-      subtitle={`${deals?.length || 0} deals · ${formatARR(totalArr)} ARR`}
+      subtitle={`${activeDeals.length} deal${activeDeals.length !== 1 ? 's' : ''} · ${formatARR(totalArr)} ARR`}
       width={560}
     >
       <div className="p-4">

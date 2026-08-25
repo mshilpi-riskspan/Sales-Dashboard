@@ -129,7 +129,7 @@ function bucketize(rollups) {
 
 const BUCKET_CONFIG = {
   inPipeline: {
-    label: 'In Active Pipeline',
+    label: 'Active Pipeline',
     description: 'Target accounts with at least one open opportunity',
     headerBg: 'bg-teal-50',
     dotCls: 'bg-rs-teal',
@@ -428,7 +428,7 @@ export default function TargetedProspects() {
           <div className="flex items-center gap-2 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
             <span className="w-2 h-2 rounded-full bg-rs-teal" />
             <span className="text-xs font-semibold text-rs-teal">{inPipeline.length}</span>
-            <span className="text-xs text-rs-muted">In Active Pipeline</span>
+            <span className="text-xs text-rs-muted">Active Pipeline</span>
           </div>
           <div className="flex items-center gap-2 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
             <span className="w-2 h-2 rounded-full bg-amber-500" />

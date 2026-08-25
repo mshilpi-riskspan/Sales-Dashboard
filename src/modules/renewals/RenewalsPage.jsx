@@ -14,7 +14,6 @@ import UpcomingRenewalsList from './UpcomingRenewalsList';
 import ChurnedClientsList from './ChurnedClientsList';
 import ChurnRateChart from './ChurnRateChart';
 import AtRiskClients from './AtRiskClients';
-import RenewalCalendarChart from './RenewalCalendarChart';
 import ChurnReasonBreakdown from './ChurnReasonBreakdown';
 
 function formatARR(v) {
@@ -91,7 +90,7 @@ export default function RenewalsPage() {
       const hasAnyLines = billing.lines.length > 0;
       if (hasActive || (renewalPendingIds.has(acct.Id) && hasAnyLines)) {
         for (const c of billing.matchedCustomers) claimedCustomerIds.add(c.id);
-        map.set(acct.Id, { ...billing, accountName: acct.Name, accountId: acct.Id, owner: acct.Owner });
+        map.set(acct.Id, { ...billing, accountName: acct.Name, accountId: acct.Id, owner: acct.Owner, tier: acct.AccountType_Tier__c ?? null });
       }
     }
     return map;
@@ -105,9 +104,13 @@ export default function RenewalsPage() {
       if (!sfOppByAccountId.has(opp.AccountId)) sfOppByAccountId.set(opp.AccountId, opp);
     }
 
+    const tierByAccountId = new Map(
+      (accountsQ.data ?? []).map(a => [a.Id, a.AccountType_Tier__c ?? null])
+    );
+
     const rows = [];
     for (const [accountId, billing] of maxioBillingByAccountId) {
-      const { lines, arr, nextRenewalDate, accountName, owner } = billing;
+      const { lines, arr, nextRenewalDate, accountName, owner, tier } = billing;
       const activeLines = lines.filter(l => l.isActive).sort((a, b) => (a.end_date || "").localeCompare(b.end_date || ""));
       const sfOpp = sfOppByAccountId.get(accountId) ?? null;
 
@@ -136,6 +139,7 @@ export default function RenewalsPage() {
         accountId,
         accountName,
         owner,
+        tier,
         arr: effectiveArr,
         renewalArr: effectiveRenewalArr,
         nextRenewalDate: effectiveRenewalDate,
@@ -161,6 +165,7 @@ export default function RenewalsPage() {
         accountId: opp.AccountId,
         accountName: opp['Account.Name'] ?? opp.Account?.Name ?? opp.Name,
         owner: opp['Owner.Name'] ? { Name: opp['Owner.Name'] } : null,
+        tier: tierByAccountId.get(opp.AccountId) ?? null,
         arr,
         renewalArr: arr,
         nextRenewalDate,
@@ -291,7 +296,6 @@ export default function RenewalsPage() {
 
       {activeTab === 'renewals' && (
         <>
-          <RenewalCalendarChart sfOpps={filteredRenewalOpps} />
           <UpcomingRenewalsList rows={renewalRows} />
           <AtRiskClients rows={atRiskRows} />
         </>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { format } from 'date-fns';
 import { ChevronDownIcon, ChevronUpIcon } from '@heroicons/react/24/outline';
 import DealDetailPanel from '../../components/common/DealDetailPanel';
@@ -10,11 +10,66 @@ function formatARR(v) {
   return `$${v}`;
 }
 
+function compareValues(a, b) {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b));
+}
+
+const COLS = [
+  { key: 'accountName',    label: 'Account',      sortable: true },
+  { key: 'arr',            label: 'ARR Lost',     sortable: true },
+  { key: 'ownerName',      label: 'Owner',        sortable: true },
+  { key: 'CloseDate',      label: 'Churn Date',   sortable: true },
+  { key: 'Loss_Reason__c', label: 'Loss Reason',  sortable: true },
+  { key: 'explanation',    label: 'Explanation',  sortable: false },
+];
+
 export default function ChurnedClientsList({ opps }) {
   const [expanded, setExpanded] = useState(true);
   const [activeDeal, setActiveDeal] = useState(null);
+  const [sortKey, setSortKey] = useState('CloseDate');
+  const [sortDir, setSortDir] = useState('desc');
+  const [filterReason, setFilterReason] = useState('all');
+  const [filterYear, setFilterYear] = useState('all');
 
-  const totalArr = opps.reduce((s, d) => s + (d.Annual_Recurring_Revenue_ARR__c ?? d.Amount ?? 0), 0);
+  function handleSort(key) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  }
+
+  const reasonOptions = useMemo(() =>
+    ['all', ...[...new Set(opps.map(o => o.Loss_Reason__c).filter(Boolean))].sort()],
+    [opps]
+  );
+
+  const yearOptions = useMemo(() => {
+    const years = [...new Set(opps.map(o => o.CloseDate?.slice(0, 4)).filter(Boolean))].sort().reverse();
+    return ['all', ...years];
+  }, [opps]);
+
+  const displayOpps = useMemo(() => {
+    let out = opps;
+
+    if (filterReason !== 'all') out = out.filter(o => o.Loss_Reason__c === filterReason);
+    if (filterYear !== 'all')   out = out.filter(o => o.CloseDate?.startsWith(filterYear));
+
+    return [...out].sort((a, b) => {
+      let aVal, bVal;
+      if (sortKey === 'accountName') { aVal = a.Account?.Name; bVal = b.Account?.Name; }
+      else if (sortKey === 'arr')    { aVal = a.Annual_Recurring_Revenue_ARR__c ?? a.Amount ?? 0; bVal = b.Annual_Recurring_Revenue_ARR__c ?? b.Amount ?? 0; }
+      else if (sortKey === 'ownerName') { aVal = a.Owner?.Name; bVal = b.Owner?.Name; }
+      else { aVal = a[sortKey]; bVal = b[sortKey]; }
+      const cmp = compareValues(aVal, bVal);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [opps, filterReason, filterYear, sortKey, sortDir]);
+
+  const totalArr = displayOpps.reduce((s, d) => s + (d.Annual_Recurring_Revenue_ARR__c ?? d.Amount ?? 0), 0);
+
+  const selectCls = 'border border-red-200 rounded px-2 py-1 text-xs text-rs-text bg-white focus:outline-none focus:ring-1 focus:ring-red-400';
 
   return (
     <>
@@ -27,9 +82,22 @@ export default function ChurnedClientsList({ opps }) {
               <p className="text-[10px] text-rs-muted mt-0.5">Closed-lost renewal opportunities</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
+            {/* Filters */}
+            <select value={filterReason} onChange={e => setFilterReason(e.target.value)} className={selectCls}>
+              <option value="all">All Reasons</option>
+              {reasonOptions.filter(r => r !== 'all').map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+            <select value={filterYear} onChange={e => setFilterYear(e.target.value)} className={selectCls}>
+              <option value="all">All Years</option>
+              {yearOptions.filter(y => y !== 'all').map(y => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
             <span className="text-xs font-semibold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">
-              {opps.length} deal{opps.length !== 1 ? 's' : ''}
+              {displayOpps.length} deal{displayOpps.length !== 1 ? 's' : ''}
             </span>
             {totalArr > 0 && (
               <span className="text-xs font-semibold text-rs-text">{formatARR(totalArr)}</span>
@@ -41,19 +109,26 @@ export default function ChurnedClientsList({ opps }) {
         </div>
 
         {expanded && (
-          opps.length === 0 ? (
-            <div className="px-4 py-5 text-center text-xs text-rs-muted">No churned renewals found</div>
+          displayOpps.length === 0 ? (
+            <div className="px-4 py-5 text-center text-xs text-rs-muted">No churned renewals match these filters</div>
           ) : (
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr>
-                  {['Account', 'ARR Lost', 'Owner', 'Churn Date', 'Loss Reason', 'Explanation'].map(h => (
-                    <th key={h} className="bg-red-600 text-white px-3 py-2 text-left text-xs font-semibold tracking-wide">{h}</th>
+                  {COLS.map(col => (
+                    <th
+                      key={col.key}
+                      onClick={col.sortable ? () => handleSort(col.key) : undefined}
+                      className={`bg-red-600 text-white px-3 py-2 text-left text-xs font-semibold tracking-wide ${col.sortable ? 'cursor-pointer select-none hover:bg-red-700' : ''}`}
+                    >
+                      {col.label}
+                      {col.sortable && sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {opps.map(deal => {
+                {displayOpps.map(deal => {
                   const arr = deal.Annual_Recurring_Revenue_ARR__c ?? deal.Amount ?? 0;
                   return (
                     <tr

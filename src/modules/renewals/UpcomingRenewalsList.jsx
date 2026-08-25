@@ -1,7 +1,63 @@
-import { useState } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { format } from 'date-fns';
 import { createPortal } from 'react-dom';
-import { XMarkIcon, CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
+import { XMarkIcon, CheckCircleIcon, ExclamationCircleIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+
+function MultiSelect({ options, selected, onChange, placeholder }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handler(e) { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  function toggle(val) {
+    const next = new Set(selected);
+    if (next.has(val)) next.delete(val); else next.add(val);
+    onChange(next);
+  }
+
+  const label = selected.size === 0 ? placeholder
+    : selected.size === 1 ? [...selected][0]
+    : `${selected.size} tiers`;
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1 border border-rs-border rounded px-2 py-1 text-xs text-rs-text bg-white hover:border-rs-teal/60 focus:outline-none"
+      >
+        <span>{label}</span>
+        <ChevronDownIcon className="h-3 w-3 text-rs-muted" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-30 bg-white border border-rs-border rounded shadow-lg min-w-[160px] py-1">
+          {options.map(opt => (
+            <label key={opt} className="flex items-center gap-2 px-3 py-1.5 text-xs text-rs-text hover:bg-rs-surface cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selected.has(opt)}
+                onChange={() => toggle(opt)}
+                className="accent-rs-teal"
+              />
+              {opt}
+            </label>
+          ))}
+          {selected.size > 0 && (
+            <button
+              onClick={() => onChange(new Set())}
+              className="w-full text-left px-3 py-1.5 text-xs text-rs-muted hover:text-rs-text hover:bg-rs-surface border-t border-rs-border mt-1"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function formatARR(v) {
   if (!v && v !== 0) return '—';
@@ -14,6 +70,22 @@ function fmtDate(d) {
   if (!d) return '—';
   return format(new Date(d + 'T00:00:00'), 'MMM d, yyyy');
 }
+
+function compareValues(a, b) {
+  if (a == null && b == null) return 0;
+  if (a == null) return 1;
+  if (b == null) return -1;
+  if (typeof a === 'number' && typeof b === 'number') return a - b;
+  return String(a).localeCompare(String(b));
+}
+
+const COLS = [
+  { key: 'accountName',     label: 'Client' },
+  { key: 'nextRenewalDate', label: 'Renewal Date' },
+  { key: 'renewalArr',      label: 'ARR' },
+  { key: 'isAutoRenew',     label: 'Auto-Renew' },
+  { key: 'sfStage',         label: 'SF Stage' },
+];
 
 // ── Subscription detail slide panel ──────────────────────────────────────────
 function SubscriptionPanel({ row, onClose }) {
@@ -153,8 +225,50 @@ function SubscriptionPanel({ row, onClose }) {
 
 export default function UpcomingRenewalsList({ rows }) {
   const [activeDetail, setActiveDetail] = useState(null);
+  const [sortKey, setSortKey] = useState('nextRenewalDate');
+  const [sortDir, setSortDir] = useState('asc');
+  const [filterTiers, setFilterTiers] = useState(new Set());
+  const [filterAutoRenew, setFilterAutoRenew] = useState('all');
+  const [filterStage, setFilterStage] = useState('all');
 
-  const totalArr = rows.reduce((s, r) => s + (r.renewalArr ?? r.arr ?? 0), 0);
+  function handleSort(key) {
+    if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+    else { setSortKey(key); setSortDir('asc'); }
+  }
+
+  const tierOptions = useMemo(() =>
+    [...new Set(rows.map(r => r.tier).filter(t => t && !t.includes('Prospect')))].sort(),
+    [rows]
+  );
+
+  const stageOptions = useMemo(() =>
+    ['all', ...[...new Set(rows.map(r => r.sfOpp?.StageName).filter(Boolean))].sort()],
+    [rows]
+  );
+
+  const displayRows = useMemo(() => {
+    let out = rows;
+
+    if (filterTiers.size > 0) out = out.filter(r => filterTiers.has(r.tier));
+    if (filterAutoRenew === 'auto')   out = out.filter(r => r.isAutoRenew === true);
+    if (filterAutoRenew === 'manual') out = out.filter(r => r.isAutoRenew === false);
+    if (filterStage !== 'all') out = out.filter(r => r.sfOpp?.StageName === filterStage);
+
+    return [...out].sort((a, b) => {
+      const aVal = sortKey === 'sfStage' ? (a.sfOpp?.StageName ?? '')
+                 : sortKey === 'renewalArr' ? (a.renewalArr ?? a.arr ?? 0)
+                 : a[sortKey];
+      const bVal = sortKey === 'sfStage' ? (b.sfOpp?.StageName ?? '')
+                 : sortKey === 'renewalArr' ? (b.renewalArr ?? b.arr ?? 0)
+                 : b[sortKey];
+      const cmp = compareValues(aVal, bVal);
+      return sortDir === 'asc' ? cmp : -cmp;
+    });
+  }, [rows, filterTiers, filterAutoRenew, filterStage, sortKey, sortDir]);
+
+  const totalArr = displayRows.reduce((s, r) => s + (r.renewalArr ?? r.arr ?? 0), 0);
+
+  const selectCls = 'border border-rs-border rounded px-2 py-1 text-xs text-rs-text bg-white focus:outline-none focus:ring-1 focus:ring-rs-teal';
 
   return (
     <>
@@ -163,24 +277,51 @@ export default function UpcomingRenewalsList({ rows }) {
           <div>
             <h3 className="text-sm font-semibold text-rs-text">Upcoming Renewals</h3>
             <p className="text-[10px] text-rs-muted mt-0.5">
-              Sorted by renewal date · {rows.length} clients · {formatARR(totalArr)} total ARR
+              {displayRows.length} client{displayRows.length !== 1 ? 's' : ''} · {formatARR(totalArr)} total ARR
             </p>
+          </div>
+          {/* Filters */}
+          <div className="flex items-center gap-2">
+            <MultiSelect
+              options={tierOptions}
+              selected={filterTiers}
+              onChange={setFilterTiers}
+              placeholder="All Tiers"
+            />
+            <select value={filterAutoRenew} onChange={e => setFilterAutoRenew(e.target.value)} className={selectCls}>
+              <option value="all">All Renewals</option>
+              <option value="auto">Auto</option>
+              <option value="manual">Manual</option>
+            </select>
+            <select value={filterStage} onChange={e => setFilterStage(e.target.value)} className={selectCls}>
+              <option value="all">All Stages</option>
+              {stageOptions.filter(s => s !== 'all').map(s => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
           </div>
         </div>
 
-        {rows.length === 0 ? (
-          <div className="px-4 py-8 text-center text-xs text-rs-muted">No upcoming renewals found</div>
+        {displayRows.length === 0 ? (
+          <div className="px-4 py-8 text-center text-xs text-rs-muted">No upcoming renewals match these filters</div>
         ) : (
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                {['Client', 'Renewal Date', 'ARR', 'Auto-Renew', 'SF Stage'].map(h => (
-                  <th key={h} className="bg-rs-teal text-white px-4 py-2 text-left text-xs font-semibold tracking-wide">{h}</th>
+                {COLS.map(col => (
+                  <th
+                    key={col.key}
+                    onClick={() => handleSort(col.key)}
+                    className="bg-rs-teal text-white px-4 py-2 text-left text-xs font-semibold tracking-wide cursor-pointer select-none hover:bg-rs-teal/90"
+                  >
+                    {col.label}
+                    {sortKey === col.key ? (sortDir === 'asc' ? ' ▲' : ' ▼') : ''}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, i) => (
+              {displayRows.map((row, i) => (
                 <tr
                   key={`${row.accountId}-${i}`}
                   onClick={() => setActiveDetail(row)}

@@ -263,7 +263,7 @@ export default function AccountView({ accountId, onBack }) {
       const directClient = snowflakeClients.find((c) => c.salesforceAccountId === accountId);
       const clientId = overrideClientId || directClient?.clientId || null;
       const clientRecord = clientId ? snowflakeClients.find((c) => c.clientId === clientId) : null;
-      const matchName = clientRecord?.displayName || clientRecord?.clientName || null;
+      const matchName = clientRecord?.displayName || clientRecord?.clientName || account?.Name || null;
       const knownTags = knownTagsForAccount(accountId);
 
       setExternalData({
@@ -281,7 +281,7 @@ export default function AccountView({ accountId, onBack }) {
       }));
     })
       .finally(() => setExternalDataLoading(false));
-  }, [accountId]);
+  }, [accountId, account?.Name]);
 
   const cadence = computeCadence(activities);
   const allActivities = [

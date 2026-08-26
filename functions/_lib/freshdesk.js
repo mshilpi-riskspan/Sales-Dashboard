@@ -48,7 +48,7 @@ async function fetchAllTickets(env) {
   for (let page = 1; page <= MAX_TICKET_PAGES; page++) {
     const batch = await freshdeskFetch(
       env,
-      `/tickets?per_page=100&page=${page}&include=stats&order_by=updated_at&order_type=desc`
+      `/tickets?per_page=100&page=${page}&include=stats&order_by=updated_at&order_type=desc&updated_since=2010-01-01T00:00:00Z`
     );
     tickets.push(...batch);
     if (batch.length < 100) break;

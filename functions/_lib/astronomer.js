@@ -39,7 +39,7 @@ async function fetchDags(env) {
 // Airflow 3's Astro API may key run results as `dag_runs` or `items`
 // depending on version — read both defensively.
 async function fetchDagRuns(env, dagId) {
-  const result = await astroFetch(env, `/dags/${encodeURIComponent(dagId)}/dagRuns?limit=20&order_by=-start_date`);
+  const result = await astroFetch(env, `/dags/${encodeURIComponent(dagId)}/dagRuns?limit=90&order_by=-start_date`);
   return result.dag_runs || result.items || [];
 }
 

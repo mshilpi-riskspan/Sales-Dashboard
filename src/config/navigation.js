@@ -2,6 +2,8 @@ import FirmGoals from '../modules/goals/FirmGoals';
 import CurrentClientsPage from '../modules/clients/CurrentClientsPage';
 import RenewalsPage from '../modules/renewals/RenewalsPage';
 import TargetedProspects from '../modules/prospects/TargetedProspects';
+import RaasPage from '../modules/raas/RaasPage';
+import DaasPage from '../modules/daas/DaasPage';
 import PipelineByStage from '../modules/pipeline/PipelineByStage';
 import PipelineByMonth from '../modules/pipeline/PipelineByMonth';
 import WinLossAnalysis from '../modules/winloss/WinLossAnalysis';
@@ -32,6 +34,20 @@ export const NAV_ITEMS = [
     icon: 'ArrowPathIcon',
     component: RenewalsPage,
     filters: ['salesperson'],
+  },
+  {
+    id: 'raas-ops',
+    label: 'RaaS Ops',
+    icon: 'ServerIcon',
+    component: RaasPage,
+    filters: [],
+  },
+  {
+    id: 'daas-ops',
+    label: 'DaaS Ops',
+    icon: 'CircleStackIcon',
+    component: DaasPage,
+    filters: [],
   },
   {
     id: 'targeted-prospects',

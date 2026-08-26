@@ -16,9 +16,6 @@ export default function Sidebar({ navItems, activePage, onNavigate }) {
       {/* Wordmark */}
       <div className="px-5 py-5 border-b border-white/10">
         <span className="text-white font-bold text-lg tracking-tight">RiskSpan</span>
-        <span className="block text-white/50 text-[10px] uppercase tracking-widest mt-0.5">
-          Sales Intelligence
-        </span>
       </div>
 
       {/* Nav */}

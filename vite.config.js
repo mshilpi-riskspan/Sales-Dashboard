@@ -5,7 +5,7 @@ import http from 'http';
 import { snowflakeQuery } from './functions/_lib/snowflake.js';
 import { fetchAccountUsage, fetchAccountUsageChartData, fetchAccountUsers, fetchUserActivity } from './functions/_lib/accountUsage.js';
 import { fetchCurrentClientsSnowflakeData } from './functions/_lib/currentClients.js';
-import { fetchFreshdeskData } from './functions/_lib/freshdesk.js';
+import { fetchFreshdeskData, fetchTicketDetail as fetchTicketDetailLib } from './functions/_lib/freshdesk.js';
 import { fetchJiraData } from './functions/_lib/jira.js';
 import { fetchAstronomerData } from './functions/_lib/astronomer.js';
 import { fetchMaxioCustomers, fetchMaxioContracts, fetchMaxioTransactions, fetchMaxioItems } from './functions/_lib/maxio.js';
@@ -185,6 +185,25 @@ export default defineConfig(({ mode }) => {
           server.middlewares.use('/api/freshdesk/current', async (req, res) => {
             try {
               const result = await fetchFreshdeskData(env);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify(result));
+            } catch (err) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: err.message }));
+            }
+          });
+
+          // Local mirror of functions/api/freshdesk/ticket.js
+          server.middlewares.use('/api/freshdesk/ticket', async (req, res) => {
+            const { searchParams } = new URL(req.url, 'http://localhost');
+            const id = searchParams.get('id');
+            if (!id) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ error: 'Missing id param' }));
+              return;
+            }
+            try {
+              const result = await fetchTicketDetailLib(env, id);
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify(result));
             } catch (err) {

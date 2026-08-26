@@ -71,6 +71,19 @@ async function fetchAllCompanies(env) {
   return companies;
 }
 
+// Fetch one ticket (with description) + its conversation replies in parallel.
+// Called lazily when a ticket detail panel is opened — not part of the bulk fetch.
+export async function fetchTicketDetail(env, ticketId) {
+  assertConfigured(env);
+  const id = Number(ticketId);
+  if (!id) throw new Error('Invalid ticketId');
+  const [ticket, conversations] = await Promise.all([
+    freshdeskFetch(env, `/tickets/${id}?include=stats`),
+    freshdeskFetch(env, `/tickets/${id}/conversations?per_page=100`),
+  ]);
+  return { ticket, conversations };
+}
+
 export async function fetchFreshdeskData(env) {
   assertConfigured(env);
 

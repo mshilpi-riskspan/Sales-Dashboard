@@ -11,6 +11,13 @@ function isCacheValid(entry) {
   return entry && Date.now() - entry.timestamp < CACHE_TTL;
 }
 
+export async function fetchTicketDetail(ticketId) {
+  const res = await fetch(`/api/freshdesk/ticket?id=${ticketId}`);
+  const json = await res.json();
+  if (!res.ok || json.error) throw new Error(json.error || 'Freshdesk ticket fetch failed');
+  return json;
+}
+
 export async function fetchFreshdeskData() {
   const cached = cache.get(CACHE_KEY);
   if (isCacheValid(cached)) return cached.data;

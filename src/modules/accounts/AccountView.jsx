@@ -501,7 +501,7 @@ export default function AccountView({ accountId, onBack }) {
               <div className="grid grid-cols-4 gap-3">
                 <StatTile
                   label="Open Tickets (Freshdesk)"
-                  value={externalData.tickets.length}
+                  value={externalData.tickets.filter(t => t.status === 2 || t.status === 3).length}
                   onClick={externalData.tickets.length > 0 ? () => setOpenPanel({ type: 'tickets' }) : undefined}
                 />
                 <StatTile

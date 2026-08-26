@@ -19,17 +19,39 @@ export function knownTagsForAccount(accountId) {
 }
 
 // ---- Freshdesk ----------------------------------------------------------
-// Primary: ticket.company_id === DIM_CLIENT.FRESHDESK_COMPANY_ID (only
-// 14/161 clients have that FK set). Fallback: fuzzy-match the ticket's
-// company name (from the bulk /companies list) against the account's name,
-// so the remaining clients aren't left with zero coverage.
-export function matchFreshdeskTickets({ tickets, companies, freshdeskCompanyId, matchName }) {
+// Matching is a three-tier cascade:
+// 1. DIM_CLIENT.FRESHDESK_COMPANY_ID direct FK (only ~14 clients have it set)
+// 2. Tag-based: Freshdesk uses short uppercase slugs (e.g. "LSEGGROUP",
+//    "RITHM-NRZ-CALIBER", "BARINGS-BABSONCAPITAL") not full company names, so
+//    fuzzy name matching fails. Instead, check whether the normalised company
+//    slug contains (or is contained by) any known client tag for the account —
+//    same normalizeForTagMatch() used for Jira/Astronomer.
+// 3. Fuzzy name fallback for any client not in the known-tags map.
+export function matchFreshdeskTickets({ tickets, companies, freshdeskCompanyId, matchName, knownTags = new Set() }) {
   if (freshdeskCompanyId) {
     const id = Number(freshdeskCompanyId);
     const direct = tickets.filter((t) => t.company_id === id);
     if (direct.length > 0) return direct;
   }
-  if (!matchName || !companies?.length) return [];
+  if (!companies?.length) return [];
+
+  // Tag-based: normalize company slug and check for overlap with known tags
+  if (knownTags.size > 0) {
+    const tagMatchedIds = new Set(
+      companies.filter((c) => {
+        const slug = normalizeForTagMatch(c.name);
+        for (const tag of knownTags) {
+          const t = normalizeForTagMatch(tag);
+          if (t && (slug.includes(t) || t.includes(slug))) return true;
+        }
+        return false;
+      }).map((c) => c.id)
+    );
+    if (tagMatchedIds.size > 0) return tickets.filter((t) => tagMatchedIds.has(t.company_id));
+  }
+
+  // Fuzzy name fallback
+  if (!matchName) return [];
   const matchedCompanyIds = new Set(
     companies.filter((c) => looksLikeMatch(matchName, c.name)).map((c) => c.id)
   );

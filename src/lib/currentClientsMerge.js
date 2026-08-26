@@ -220,7 +220,7 @@ export function mergeCurrentClients({ accounts, snowflakeClients, snowflakeData,
       const externalTags = knownTagsForAccount(a.Id);
 
       const ticketsForAccount = matchFreshdeskTickets({
-        tickets: freshdeskTickets, companies: freshdeskCompanies, freshdeskCompanyId, matchName,
+        tickets: freshdeskTickets, companies: freshdeskCompanies, freshdeskCompanyId, matchName, knownTags: externalTags,
       });
       const issuesForAccount = matchJiraIssues({ issues: jiraIssues, knownTags: externalTags, matchName });
       const dagsForAccount = matchAstroDags({

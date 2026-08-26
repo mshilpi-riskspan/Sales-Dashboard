@@ -269,7 +269,7 @@ export default function AccountView({ accountId, onBack }) {
       setExternalData({
         tickets: matchFreshdeskTickets({
           tickets: freshdeskData.tickets, companies: freshdeskData.companies,
-          freshdeskCompanyId: clientRecord?.freshdeskCompanyId, matchName,
+          freshdeskCompanyId: clientRecord?.freshdeskCompanyId, matchName, knownTags,
         }),
         issues: matchJiraIssues({ issues: jiraData.issues, knownTags, matchName }),
         dags: matchAstroDags({ dags: astroData.dags, runsByDagId: astroData.runsByDagId, knownTags, matchName }),

@@ -200,6 +200,7 @@ export default function PipelineByMonth() {
   const [error, setError] = useState(null);
   const [activeDeal, setActiveDeal] = useState(null);
   const [showAllDeals, setShowAllDeals] = useState(false);
+  const [selectedTypes, setSelectedTypes] = useState(new Set());
 
   // Window is always computed fresh relative to today
   const windowDates = useMemo(() => buildWindow(), []);
@@ -216,11 +217,30 @@ export default function PipelineByMonth() {
 
   const filtered = useRepFilter(rawData);
 
+  const TYPE_OPTIONS = [
+    { value: 'New Account', label: 'New Account' },
+    { value: 'Upsell',      label: 'Upsell' },
+    { value: 'Cross-Sell',  label: 'Cross-Sell' },
+  ];
+
+  function toggleType(val) {
+    setSelectedTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(val)) next.delete(val); else next.add(val);
+      return next;
+    });
+  }
+
+  const typeFiltered = useMemo(() => {
+    if (!filtered || selectedTypes.size === 0) return filtered;
+    return filtered.filter(d => selectedTypes.has(d.Type));
+  }, [filtered, selectedTypes]);
+
   const windowMonths = useMemo(() => {
     return windowDates.map(date => {
       const slot = { date, deals: [], totalArr: 0 };
-      if (!filtered) return slot;
-      for (const deal of filtered) {
+      if (!typeFiltered) return slot;
+      for (const deal of typeFiltered) {
         if (!deal.CloseDate || !deal.Account?.Name) continue;
         if (!PIPELINE_STAGES.has(deal.StageName)) continue;
         const d = new Date(deal.CloseDate + 'T00:00:00');
@@ -231,7 +251,7 @@ export default function PipelineByMonth() {
       }
       return slot;
     });
-  }, [filtered, windowDates]);
+  }, [typeFiltered, windowDates]);
 
   const totalDeals = windowMonths.reduce((s, m) => s + m.deals.length, 0);
   const totalArr = windowMonths.reduce((s, m) => s + m.totalArr, 0);
@@ -254,17 +274,34 @@ export default function PipelineByMonth() {
       <div className="rounded-card border border-rs-border bg-white p-4 mb-6">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-sm font-semibold text-rs-text">Monthly Close Overview</h2>
-          <button
-            onClick={() => setShowAllDeals(true)}
-            className="flex gap-4 text-xs hover:opacity-80 transition-opacity"
-          >
-            <span className="text-rs-muted">
-              <span className="font-bold text-rs-text text-sm underline decoration-dotted">{totalDeals}</span> deals
-            </span>
-            <span className="text-rs-muted">
-              <span className="font-bold text-rs-teal text-sm underline decoration-dotted">{formatARR(totalArr)}</span> total ARR
-            </span>
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              {TYPE_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  onClick={() => toggleType(opt.value)}
+                  className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors
+                    ${selectedTypes.has(opt.value)
+                      ? 'bg-rs-teal/15 text-rs-teal border-rs-teal/40'
+                      : 'bg-transparent text-rs-muted border-rs-border hover:text-rs-text hover:border-rs-text/30'
+                    }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={() => setShowAllDeals(true)}
+              className="flex gap-4 text-xs hover:opacity-80 transition-opacity"
+            >
+              <span className="text-rs-muted">
+                <span className="font-bold text-rs-text text-sm underline decoration-dotted">{totalDeals}</span> deals
+              </span>
+              <span className="text-rs-muted">
+                <span className="font-bold text-rs-teal text-sm underline decoration-dotted">{formatARR(totalArr)}</span> total ARR
+              </span>
+            </button>
+          </div>
         </div>
         <MonthChart windowMonths={windowMonths} />
       </div>
@@ -282,7 +319,7 @@ export default function PipelineByMonth() {
       </div>
 
       <PipelineListPanel
-        deals={showAllDeals ? filtered : null}
+        deals={showAllDeals ? typeFiltered : null}
         onClose={() => setShowAllDeals(false)}
         onDealClick={deal => { setShowAllDeals(false); setActiveDeal(deal); }}
       />

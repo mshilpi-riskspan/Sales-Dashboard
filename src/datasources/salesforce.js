@@ -399,7 +399,7 @@ export async function fetchOpportunitiesClosingInYear(year) {
   return queryAll(
     `SELECT Id, Name, StageName, Amount, Annual_Recurring_Revenue_ARR__c, OwnerId, Owner.Name,
      AccountId, Account.Name, CreatedDate, LastStageChangeDate, CloseDate, NextStep,
-     ForecastCategoryName, IsClosed, IsWon, Line_of_Business__c
+     ForecastCategoryName, IsClosed, IsWon, Line_of_Business__c, Type
      FROM Opportunity
      WHERE CloseDate >= ${year}-01-01 AND CloseDate <= ${year}-12-31
      AND IsClosed = false

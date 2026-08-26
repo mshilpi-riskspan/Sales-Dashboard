@@ -112,6 +112,21 @@ export default function PipelineByStage() {
   const filteredOpen = useRepFilter(openData);
   const [showAllDeals, setShowAllDeals] = useState(false);
   const [activeDeal, setActiveDeal] = useState(null);
+  const [selectedTypes, setSelectedTypes] = useState(new Set());
+
+  const TYPE_OPTIONS = [
+    { value: 'New Account', label: 'New Account' },
+    { value: 'Upsell',      label: 'Upsell' },
+    { value: 'Cross-Sell',  label: 'Cross-Sell' },
+  ];
+
+  function toggleType(val) {
+    setSelectedTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(val)) next.delete(val); else next.add(val);
+      return next;
+    });
+  }
 
   const scopedOpen = useMemo(() => {
     if (selectedScope === 'all') return filteredOpen || [];
@@ -122,13 +137,18 @@ export default function PipelineByStage() {
     });
   }, [filteredOpen, selectedScope, currentYear]);
 
+  const typeFiltered = useMemo(() => {
+    if (selectedTypes.size === 0) return scopedOpen;
+    return scopedOpen.filter(d => selectedTypes.has(d.Type));
+  }, [scopedOpen, selectedTypes]);
+
   const stageData = useMemo(() => {
     const map = {};
     for (const stage of SALES_STAGES) {
       map[stage.name] = { deals: [], totalArr: 0 };
     }
 
-    for (const opp of scopedOpen) {
+    for (const opp of typeFiltered) {
       if (map[opp.StageName] !== undefined && opp.StageName !== 'Closed Won') {
         map[opp.StageName].deals.push(opp);
         map[opp.StageName].totalArr += opp.Annual_Recurring_Revenue_ARR__c ?? opp.Amount ?? 0;
@@ -136,7 +156,7 @@ export default function PipelineByStage() {
     }
 
     return map;
-  }, [scopedOpen]);
+  }, [typeFiltered]);
 
   if (loading) {
     return (
@@ -160,24 +180,42 @@ export default function PipelineByStage() {
     <div>
       <div className="flex items-center justify-between mb-4 px-1">
         <span className="text-xs font-medium text-rs-text">Close Date</span>
-        <div className="flex gap-1">
-          {scopeOptions.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => setSelectedScope(opt.value)}
-              className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors
-                ${selectedScope === opt.value
-                  ? 'bg-rs-teal/10 text-rs-teal border-rs-teal/30'
-                  : 'text-rs-muted border-rs-border hover:text-rs-text hover:border-rs-text/30'
-                }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-1">
+            {TYPE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => toggleType(opt.value)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium border transition-colors
+                  ${selectedTypes.has(opt.value)
+                    ? 'bg-rs-teal/15 text-rs-teal border-rs-teal/40'
+                    : 'text-rs-muted border-rs-border hover:text-rs-text hover:border-rs-text/30'
+                  }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-rs-border" />
+          <div className="flex gap-1">
+            {scopeOptions.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setSelectedScope(opt.value)}
+                className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors
+                  ${selectedScope === opt.value
+                    ? 'bg-rs-teal/10 text-rs-teal border-rs-teal/30'
+                    : 'text-rs-muted border-rs-border hover:text-rs-text hover:border-rs-text/30'
+                  }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
       <FunnelSummary stageData={stageData} onShowAll={() => setShowAllDeals(true)} />
-      <PipelineByMonthMini deals={scopedOpen} scope={selectedScope} currentYear={currentYear} />
+      <PipelineByMonthMini deals={typeFiltered} scope={selectedScope} currentYear={currentYear} />
       <div className="space-y-4">
         {SALES_STAGES.map((stage) => (
           <StageCard
@@ -190,7 +228,7 @@ export default function PipelineByStage() {
       </div>
 
       <PipelineListPanel
-        deals={showAllDeals ? scopedOpen : null}
+        deals={showAllDeals ? typeFiltered : null}
         onClose={() => setShowAllDeals(false)}
         onDealClick={(deal) => { setShowAllDeals(false); setActiveDeal(deal); }}
       />

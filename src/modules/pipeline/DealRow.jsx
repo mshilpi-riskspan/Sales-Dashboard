@@ -25,10 +25,10 @@ export default function DealRow({ deal, stageConfig, onClick }) {
           : 'hover:bg-[#E8EBF2]'
       }`}
     >
-      <td className={`px-3 py-2 text-sm font-medium ${isOverdue ? 'text-rs-overdueText' : 'text-rs-text'}`}>
+      <td className={`px-3 py-2 text-sm font-medium truncate ${isOverdue ? 'text-rs-overdueText' : 'text-rs-text'}`}>
         {deal.Account?.Name || deal.Name || '—'}
       </td>
-      <td className={`px-3 py-2 text-sm ${isOverdue ? 'text-rs-overdueText' : 'text-rs-muted'}`}>
+      <td className={`px-3 py-2 text-sm truncate ${isOverdue ? 'text-rs-overdueText' : 'text-rs-muted'}`}>
         {deal.Owner?.Name || '—'}
       </td>
       <td className={`px-3 py-2 text-sm font-medium ${isOverdue ? 'text-rs-overdueText' : 'text-rs-text'}`}>

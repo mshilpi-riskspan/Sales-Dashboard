@@ -101,15 +101,15 @@ function MonthDealRow({ deal, onClick }) {
       onClick={() => onClick(deal)}
       className="border-b border-rs-border hover:bg-rs-surface cursor-pointer transition-colors"
     >
-      <td className="px-3 py-2">
+      <td className="px-3 py-2 truncate">
         <span className="text-sm font-medium text-rs-text">{deal.Account?.Name || '—'}</span>
       </td>
       <td className="px-3 py-2">
-        <span className="text-xs bg-rs-teal/10 text-rs-teal px-2 py-0.5 rounded-full font-medium whitespace-nowrap">
+        <span className="text-xs bg-rs-teal/10 text-rs-teal px-2 py-0.5 rounded-full font-medium truncate block max-w-full">
           {deal.StageName}
         </span>
       </td>
-      <td className="px-3 py-2 text-sm text-rs-muted">{deal.Owner?.Name || '—'}</td>
+      <td className="px-3 py-2 text-sm text-rs-muted truncate">{deal.Owner?.Name || '—'}</td>
       <td className="px-3 py-2 text-sm font-medium text-rs-text">{formatARR(arr)}</td>
       <td className="px-3 py-2 text-sm text-rs-muted whitespace-nowrap">
         {deal.CloseDate ? format(new Date(deal.CloseDate + 'T00:00:00'), 'MMM d') : '—'}
@@ -164,12 +164,19 @@ function MonthCard({ monthDate, deals, onDealClick }) {
         deals.length === 0 ? (
           <div className="px-4 py-5 text-center text-xs text-rs-muted">No deals closing this month</div>
         ) : (
-          <table className="w-full text-sm border-collapse">
+          <table className="w-full text-sm border-collapse table-fixed">
             <thead>
               <tr>
-                {['Account', 'Stage', 'AE Owner', 'ARR', 'Close Date', 'Days in Stage'].map(h => (
-                  <th key={h} className="bg-rs-teal text-white px-3 py-2 text-left text-xs font-semibold tracking-wide">
-                    {h}
+                {[
+                  { label: 'Account',       w: 'w-[28%]' },
+                  { label: 'Stage',         w: 'w-[22%]' },
+                  { label: 'AE Owner',      w: 'w-[18%]' },
+                  { label: 'ARR',           w: 'w-[12%]' },
+                  { label: 'Close Date',    w: 'w-[11%]' },
+                  { label: 'Days in Stage', w: 'w-[9%]'  },
+                ].map(({ label, w }) => (
+                  <th key={label} className={`${w} bg-rs-teal text-white px-3 py-2 text-left text-xs font-semibold tracking-wide`}>
+                    {label}
                   </th>
                 ))}
               </tr>

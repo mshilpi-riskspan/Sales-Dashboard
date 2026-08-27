@@ -70,15 +70,20 @@ export default function StageCard({ stage, deals, onDealClick }) {
           {deals.length === 0 ? (
             <EmptyState message="No open deals in this stage" />
           ) : (
-            <table className="w-full text-sm border-collapse">
+            <table className="w-full text-sm border-collapse table-fixed">
               <thead>
                 <tr>
-                  {['Account', 'AE Owner', 'ARR', 'Days in Stage'].map((h) => (
+                  {[
+                    { label: 'Account',       w: 'w-[42%]' },
+                    { label: 'AE Owner',      w: 'w-[28%]' },
+                    { label: 'ARR',           w: 'w-[18%]' },
+                    { label: 'Days in Stage', w: 'w-[12%]' },
+                  ].map(({ label, w }) => (
                     <th
-                      key={h}
-                      className="bg-rs-teal text-white px-3 py-2 text-left text-xs font-semibold tracking-wide"
+                      key={label}
+                      className={`${w} bg-rs-teal text-white px-3 py-2 text-left text-xs font-semibold tracking-wide`}
                     >
-                      {h}
+                      {label}
                     </th>
                   ))}
                 </tr>

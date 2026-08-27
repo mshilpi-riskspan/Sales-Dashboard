@@ -95,7 +95,7 @@ export default function OpsClientTable({ rows, onRowClick }) {
         <tbody>
           {sorted.map((row) => (
             <tr
-              key={row.accountId}
+              key={row.accountId ?? row.accountName}
               onClick={() => onRowClick?.(row)}
               className="border-b border-rs-border hover:bg-rs-surface cursor-pointer transition-colors"
             >

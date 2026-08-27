@@ -15,8 +15,10 @@ export const PRODUCT_FILTERS = {
     d.tags?.some((t) => t.name === 'raas') &&
     !d.tags?.some((t) => t.name === 'daas_api_triggered'),
   daas: (d) => d.tags?.some((t) => t.name === 'daas_api_triggered'),
+  all: () => true,
 };
 
+// Returns the SF account ID for a DAG if the client tag is in the map.
 function getClientAccountId(dag) {
   for (const t of dag.tags || []) {
     const upper = t.name?.toUpperCase();
@@ -27,19 +29,30 @@ function getClientAccountId(dag) {
   return null;
 }
 
-// Returns one row per SF account with aggregated run stats.
+// Returns the first non-infrastructure tag, regardless of SF mapping.
+function getClientTag(dag) {
+  for (const t of dag.tags || []) {
+    if (t.name && !NON_CLIENT_TAGS.has(t.name)) return t.name;
+  }
+  return null;
+}
+
+// Returns one row per client with aggregated run stats.
+// Groups by SF account ID when mapped; falls back to the raw tag name so
+// unmapped companies still appear rather than being silently dropped.
 export function buildClientRows({ dags, runsByDagId, productTag, accountsById }) {
-  const filterFn = PRODUCT_FILTERS[productTag];
-  if (!filterFn) return [];
+  const filterFn = PRODUCT_FILTERS[productTag] ?? PRODUCT_FILTERS.all;
 
-  const productDags = dags.filter(filterFn);
+  const productDags = dags.filter((d) => !d.is_paused).filter(filterFn);
 
-  const byAccountId = new Map();
+  const byKey = new Map();
   for (const dag of productDags) {
     const accountId = getClientAccountId(dag);
-    if (!accountId) continue;
-    if (!byAccountId.has(accountId)) byAccountId.set(accountId, { accountId, dags: [] });
-    byAccountId.get(accountId).dags.push({
+    const clientTag = getClientTag(dag);
+    const key = accountId ?? clientTag;
+    if (!key) continue;
+    if (!byKey.has(key)) byKey.set(key, { accountId, clientTag, dags: [] });
+    byKey.get(key).dags.push({
       ...dag,
       runs: runsByDagId?.[dag.dag_id] || [],
     });
@@ -47,14 +60,14 @@ export function buildClientRows({ dags, runsByDagId, productTag, accountsById })
 
   const today = new Date().toISOString().slice(0, 10);
   const rows = [];
-  for (const [accountId, { dags: clientDags }] of byAccountId) {
-    const acct = accountsById?.get(accountId);
+  for (const [, { accountId, clientTag, dags: clientDags }] of byKey) {
+    const acct = accountId ? accountsById?.get(accountId) : null;
     const allRuns = clientDags
       .flatMap((d) => d.runs)
       .sort((a, b) => (b.start_date || '').localeCompare(a.start_date || ''));
     rows.push({
-      accountId,
-      accountName: acct?.Name ?? accountId,
+      accountId: accountId ?? null,
+      accountName: acct?.Name ?? clientTag,
       tier: acct?.AccountType_Tier__c ?? null,
       dagCount: clientDags.length,
       dags: clientDags,

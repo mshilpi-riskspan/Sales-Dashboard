@@ -16,11 +16,12 @@ function avg(arr) {
   return valid.length ? Math.round(valid.reduce((s, v) => s + v, 0) / valid.length) : null;
 }
 
-export default function OpsPage({ productTag, title }) {
+export default function OpsPage({ productTag, title = 'Batch Ops' }) {
   const { triggerRefresh } = useDashboard();
   const astronomerQ = useSalesforceQuery(fetchAstronomerData);
   const accountsQ   = useSalesforceQuery(fetchAllAccounts);
   const [selectedClient, setSelectedClient] = useState(null);
+  const effectiveTag = productTag ?? 'all';
 
   const accountsById = useMemo(() =>
     new Map((accountsQ.data ?? []).map((a) => [a.Id, a])),
@@ -30,9 +31,9 @@ export default function OpsPage({ productTag, title }) {
   const clientRows = useMemo(() => buildClientRows({
     dags:        astronomerQ.data?.dags ?? [],
     runsByDagId: astronomerQ.data?.runsByDagId ?? {},
-    productTag,
+    productTag:  effectiveTag,
     accountsById,
-  }), [astronomerQ.data, accountsById, productTag]);
+  }), [astronomerQ.data, accountsById, effectiveTag]);
 
   const aggregateSeries = useMemo(() => mergeDailySeries(clientRows), [clientRows]);
 
@@ -41,10 +42,10 @@ export default function OpsPage({ productTag, title }) {
     const todayTotal  = clientRows.reduce((s, r) => s + (r.todaySuccess || 0) + (r.todayFailed || 0), 0);
     const todayHealth = todayTotal > 0 ? Math.round(((todayTotal - todayFailed) / todayTotal) * 100) : null;
     return {
-      clients:      clientRows.length,
-      dags:         clientRows.reduce((s, r) => s + r.dagCount, 0),
+      clients:     clientRows.length,
+      dags:        clientRows.reduce((s, r) => s + r.dagCount, 0),
       todayFailed,
-      avgHealth7d:  avg(clientRows.map((r) => r.healthPct7d)),
+      avgHealth7d: avg(clientRows.map((r) => r.healthPct7d)),
       todayHealth,
     };
   }, [clientRows]);
@@ -86,15 +87,12 @@ export default function OpsPage({ productTag, title }) {
         />
       </div>
 
-      {/* Trend chart */}
       {aggregateSeries.length > 0 && (
         <OpsTrendChart series={aggregateSeries} />
       )}
 
-      {/* Client table */}
       <OpsClientTable rows={clientRows} onRowClick={setSelectedClient} />
 
-      {/* Detail panel */}
       <OpsClientDetail row={selectedClient} onClose={() => setSelectedClient(null)} />
     </div>
   );

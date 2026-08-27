@@ -1,4 +1,8 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
+import { format } from 'date-fns';
+import {
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, Legend,
+} from 'recharts';
 import {
   ArrowLeftIcon, MapPinIcon, GlobeAltIcon,
 } from '@heroicons/react/24/outline';
@@ -6,7 +10,7 @@ import {
   fetchAccountDetail, fetchAccountContacts,
   fetchAccountActivities, fetchAccountOpportunities,
 } from '../../datasources/salesforce';
-import { fetchAccountUsage, fetchSnowflakeClients } from '../../datasources/snowflake';
+import { fetchAccountUsage, fetchSnowflakeClients, fetchAccountUsers, fetchUserActivity } from '../../datasources/snowflake';
 import { fetchFreshdeskData } from '../../datasources/freshdesk';
 import { fetchJiraData } from '../../datasources/jira';
 import { fetchAstronomerData } from '../../datasources/astronomer';
@@ -24,7 +28,7 @@ import ActivityListPanel from './ActivityListPanel';
 import { TicketListPanel, TicketDetailPanel } from './TicketPanels';
 import { JiraListPanel, JiraDetailPanel } from './JiraPanels';
 import { BatchListPanel, BatchDetailPanel } from './BatchPanels';
-import UsageChart from './UsageChart';
+import UsageChart, { METRICS } from './UsageChart';
 import MaxioArrChart from './MaxioArrChart';
 
 // L3 = Jira project key LVL3 (issue keys like LVL3-1234) — same convention
@@ -179,6 +183,141 @@ function CadenceBar({ label, count, total }) {
   );
 }
 
+// ── Usage helpers (ported from UsageCategoryPanel) ───────────────────────────
+
+const FD_STATUS_LABELS = { 2: 'Open', 3: 'Pending', 4: 'Resolved', 5: 'Closed' };
+const FD_STATUS_COLORS = {
+  2: 'bg-blue-100 text-blue-700',
+  3: 'bg-amber-100 text-amber-700',
+  4: 'bg-green-100 text-green-700',
+  5: 'bg-slate-100 text-slate-600',
+};
+
+function dagStateBadgeCls(state) {
+  if (!state) return 'bg-slate-100 text-slate-600';
+  if (state === 'success') return 'bg-green-100 text-green-700';
+  if (state === 'failed' || state === 'failed') return 'bg-red-100 text-red-600';
+  if (state === 'running') return 'bg-blue-100 text-blue-700';
+  return 'bg-slate-100 text-slate-600';
+}
+
+function lastRunOf(dag) {
+  return [...(dag.runs || [])].sort((a, b) => new Date(b.start_date) - new Date(a.start_date))[0];
+}
+
+const USER_RANGES = [
+  { key: '7',   label: '1W' },
+  { key: '30',  label: '1M' },
+  { key: '90',  label: '3M' },
+  { key: '365', label: '1Y' },
+];
+
+const USER_TYPE_FILTERS = [
+  { key: 'all',          label: 'All' },
+  { key: 'System/Batch', label: 'System/Batch' },
+  { key: 'End User',     label: 'Users' },
+];
+
+function flattenTypeCounts(...objs) {
+  const out = new Map();
+  for (const obj of objs) {
+    for (const [key, count] of Object.entries(obj || {})) {
+      const label = key.split(';').find((part) => !/^EdgeScenario=/i.test(part)) || key;
+      out.set(label, (out.get(label) || 0) + count);
+    }
+  }
+  return [...out.entries()].sort((a, b) => b[1] - a[1]);
+}
+
+function TypePills({ counts }) {
+  const flat = flattenTypeCounts(counts);
+  if (flat.length === 0) return <span className="text-rs-muted">—</span>;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {flat.map(([label, count]) => (
+        <span key={label} className="text-[10px] bg-rs-surface border border-rs-border/50 rounded-full px-1.5 py-0.5 text-rs-muted whitespace-nowrap">
+          {label} <span className="font-medium text-rs-text">{Math.round(count).toLocaleString()}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function RunActivityChart({ activity, height = 160, showLegend = true }) {
+  return (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={activity} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
+        <XAxis dataKey="RUN_DATE" tick={{ fontSize: 10, fill: '#858C9C' }} axisLine={false} tickLine={false} />
+        <YAxis tick={{ fontSize: 10, fill: '#858C9C' }} axisLine={false} tickLine={false} width={32} />
+        <Tooltip contentStyle={{ fontSize: 11, borderRadius: 8, border: '1px solid #DADEE5' }} />
+        {showLegend && <Legend wrapperStyle={{ fontSize: 11 }} iconType="plainline" />}
+        <Line type="monotone" dataKey="FORECAST_RUN_COUNT" name="Forecast runs" stroke="#D97706" strokeWidth={2} dot={false} />
+        <Line type="monotone" dataKey="QUERY_RUN_COUNT" name="Query runs" stroke="#0C8EA3" strokeWidth={2} dot={false} />
+      </LineChart>
+    </ResponsiveContainer>
+  );
+}
+
+function UserActivityRow({ userId, accountId, clientId, daysBack }) {
+  const [activity, setActivity] = useState(null);
+  useEffect(() => {
+    setActivity(null);
+    fetchUserActivity({ accountId, clientId, userIds: [userId], daysBack })
+      .then((data) => setActivity(data.activity || []))
+      .catch(() => setActivity([]));
+  }, [userId, accountId, clientId, daysBack]);
+
+  return (
+    <tr className="bg-rs-surface/40">
+      <td colSpan={10} className="px-3 py-3">
+        {activity === null ? (
+          <p className="text-xs text-rs-muted">Loading activity…</p>
+        ) : activity.length === 0 ? (
+          <p className="text-xs text-rs-muted">No run activity in this range.</p>
+        ) : (
+          <RunActivityChart activity={activity} height={120} showLegend={false} />
+        )}
+      </td>
+    </tr>
+  );
+}
+
+function aggregateMetric(rows, metric) {
+  let sum = 0, count = 0;
+  for (const row of rows) {
+    const v = row[metric.key];
+    if (v === null || v === undefined) continue;
+    sum += v; count += 1;
+  }
+  if (count === 0) return null;
+  return metric.agg === 'avg' ? Math.round((sum / count) * 100) / 100 : sum;
+}
+
+function formatMetricValue(metric, value) {
+  if (value == null) return '—';
+  if (metric.key === 'AVG_API_LATENCY_MS') return `${Math.round(value)}ms`;
+  return Math.round(value).toLocaleString();
+}
+
+function SectionCard({ title, badge, onViewAll, loading, children }) {
+  return (
+    <div className="rounded-card border border-rs-border bg-white overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-rs-border bg-rs-surface">
+        <div className="flex items-center gap-2">
+          <h3 className="text-xs font-semibold text-rs-text uppercase tracking-wide">{title}</h3>
+          {badge && <span className="text-[10px] bg-rs-teal/10 text-rs-teal px-2 py-0.5 rounded-full">{badge}</span>}
+        </div>
+        {onViewAll && <button onClick={onViewAll} className="text-xs text-rs-teal hover:underline">View all →</button>}
+      </div>
+      {loading ? (
+        <div className="p-4 space-y-2">
+          {[1, 2, 3].map(i => <div key={i} className="h-8 bg-rs-surface rounded animate-pulse" />)}
+        </div>
+      ) : children}
+    </div>
+  );
+}
+
 // ── Main Component ────────────────────────────────────────────────────────────
 
 export default function AccountView({ accountId, onBack }) {
@@ -197,8 +336,19 @@ export default function AccountView({ accountId, onBack }) {
   // open (mutually exclusive by construction, matching SlidePanel's own
   // one-at-a-time design); the four `active*` vars hold a single record
   // drilled into from a list, one level deeper.
-  const [openPanel, setOpenPanel] = useState(null); // { type: 'deals'|'contacts'|'activity'|'usage'|'datasets'|'tickets'|'issues'|'l3'|'liveDags' }
+  const [openPanel, setOpenPanel] = useState(null); // { type: 'deals'|'contacts'|'activity'|'datasets'|'tickets'|'issues'|'l3'|'liveDags'|'maxio' }
   const [activeDeal, setActiveDeal] = useState(null);
+
+  // Usage panel state (lifted from UsageCategoryPanel, now inline on the page)
+  const [chartWindow, setChartWindow] = useState({ dailyRows: [], daysBack: 180, lookbackLabel: '6mo', loading: true });
+  const [usersDaysBack, setUsersDaysBack] = useState('30');
+  const [userTypeFilter, setUserTypeFilter] = useState('all');
+  const [selectedUserIds, setSelectedUserIds] = useState(() => new Set());
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [expandedUserId, setExpandedUserId] = useState(null);
+  const [chartActivity, setChartActivity] = useState([]);
+  const [chartActivityLoading, setChartActivityLoading] = useState(false);
   const [activeTicket, setActiveTicket] = useState(null);
   const [activeIssue, setActiveIssue] = useState(null);
   const [activeL3Issue, setActiveL3Issue] = useState(null);
@@ -283,6 +433,37 @@ export default function AccountView({ accountId, onBack }) {
       .finally(() => setExternalDataLoading(false));
   }, [accountId, account?.Name]);
 
+  const usageClientId = usage?.clientId || null;
+
+  // Fetch per-user activity for the inline Usage section (mirrors UsageCategoryPanel)
+  useEffect(() => {
+    if (!usage?.mapped || !usageClientId) { setUsers([]); setUsersLoading(false); return; }
+    setUsersLoading(true);
+    fetchAccountUsers({ accountId, clientId: usageClientId, daysBack: usersDaysBack })
+      .then((data) => setUsers(data.users || []))
+      .catch(() => setUsers([]))
+      .finally(() => setUsersLoading(false));
+  }, [usage?.mapped, usageClientId, accountId, usersDaysBack]);
+
+  const selectedIdsList = useMemo(() => [...selectedUserIds], [selectedUserIds]);
+
+  useEffect(() => {
+    if (selectedIdsList.length === 0 || !usageClientId) { setChartActivity([]); return; }
+    setChartActivityLoading(true);
+    fetchUserActivity({ accountId, clientId: usageClientId, userIds: selectedIdsList, daysBack: usersDaysBack })
+      .then((data) => setChartActivity(data.activity || []))
+      .catch(() => setChartActivity([]))
+      .finally(() => setChartActivityLoading(false));
+  }, [accountId, usageClientId, selectedIdsList, usersDaysBack]);
+
+  function toggleUser(userId) {
+    setSelectedUserIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId); else next.add(userId);
+      return next;
+    });
+  }
+
   const cadence = computeCadence(activities);
   const allActivities = [
     ...(activities?.tasks || []).map(t => ({ ...t, _type: 'task' })),
@@ -294,7 +475,8 @@ export default function AccountView({ accountId, onBack }) {
   });
 
   const openOpps = (opps || []).filter(o => !o.IsClosed);
-  const openOppsCount = openOpps.filter(o => o.StageName !== 'Client Prospecting').length;
+  const pipelineOpps = openOpps.filter(o => o.StageName !== 'Client Prospecting');
+  const openOppsCount = pipelineOpps.length;
   const wonOpps = (opps || []).filter(o => o.IsWon);
   const wonARR = wonOpps.reduce((s, o) => s + (o.Annual_Recurring_Revenue_ARR__c || 0), 0);
 
@@ -318,6 +500,27 @@ export default function AccountView({ accountId, onBack }) {
   const usageMetrics = usage?.usage;
   const distinctUsers = usage?.distinctUsers;
   const l3Issues = externalData.issues.filter(isL3Issue);
+  const servers = usage?.usageByServer || [];
+
+  const tableUsers = useMemo(() => {
+    if (selectedUserIds.size > 0) return users.filter((u) => selectedUserIds.has(u.RS_USER_ID));
+    return userTypeFilter === 'all' ? users : users.filter((u) => u.USER_TYPE === userTypeFilter);
+  }, [users, selectedUserIds, userTypeFilter]);
+
+  const selectedAggregate = useMemo(() => {
+    if (selectedUserIds.size === 0) return null;
+    const rows = users.filter((u) => selectedUserIds.has(u.RS_USER_ID));
+    return {
+      runCount:      rows.reduce((s, u) => s + (u.RUN_COUNT || 0), 0),
+      queryCount:    rows.reduce((s, u) => s + (u.QUERY_COUNT || 0), 0),
+      forecastCount: rows.reduce((s, u) => s + (u.FORECAST_COUNT || 0), 0),
+      activeDays:    rows.reduce((s, u) => s + (u.ACTIVE_DAYS || 0), 0),
+      loanCount:     rows.reduce((s, u) => s + (u.LOAN_COUNT || 0), 0),
+      securityCount: rows.reduce((s, u) => s + (u.SECURITY_COUNT || 0), 0),
+      securityTypes: flattenTypeCounts(...rows.map((u) => u.SECURITY_TYPES)),
+      analyticsTypes: flattenTypeCounts(...rows.map((u) => u.ANALYTICS_TYPES)),
+    };
+  }, [users, selectedUserIds]);
   const activeModules = [...new Set(maxioBilling.lines.filter((l) => l.isActive).map((l) => l.itemName).filter(Boolean))];
   const maxioArrSeries = useMemo(() => buildMaxioArrSeries(maxioBilling.lines), [maxioBilling.lines]);
 
@@ -409,126 +612,459 @@ export default function AccountView({ accountId, onBack }) {
       <div className="p-6 grid grid-cols-3 gap-6">
         <div className="col-span-2 space-y-8 min-w-0">
 
-          {/* Overview — Maxio billing (ARR = sum of home_arr_amount across
-              currently-active, non-cancelled subscription line items;
-              distinct from the Salesforce Current_ARR__c figure) alongside
-              open-deal/won-deal context, so billing and pipeline read
-              together at a glance. */}
+          {/* Overview — Maxio billing stats on left, ARR trend chart filling
+              the right side. Open Deals shown separately below. */}
           <section>
             <SectionLabel>Overview</SectionLabel>
             {externalDataLoading || loading ? (
-              <div className="grid grid-cols-3 gap-3">
-                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
-              </div>
+              <Skeleton className="h-28 w-full" />
             ) : (
-              <div className="grid grid-cols-3 gap-3">
-                <StatTile
-                  label="ARR (Maxio)"
-                  value={formatMoneyExact(maxioBilling.arr)}
-                  onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
-                />
-                <StatTile
-                  label="Next Renewal"
-                  value={maxioBilling.nextRenewalDate || '—'}
-                  sublabel={maxioBilling.nextRenewalDate ? relativeDate(maxioBilling.nextRenewalDate) : undefined}
-                  onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
-                />
-                <StatTile label="Open Deals" value={openOppsCount} onClick={openOpps.length > 0 ? () => setOpenPanel({ type: 'deals' }) : undefined} />
+              <div
+                className="rounded-card border border-rs-border bg-white px-5 py-4 flex items-start gap-6"
+                onClick={maxioBilling.lines.length > 0 ? () => setOpenPanel({ type: 'maxio' }) : undefined}
+                style={maxioBilling.lines.length > 0 ? { cursor: 'pointer' } : undefined}
+              >
+                {/* Billing stats */}
+                <div className="flex-none space-y-3">
+                  <div className="flex gap-8">
+                    {[
+                      {
+                        label: 'ARR (Maxio)',
+                        value: formatMoneyExact(maxioBilling.arr),
+                        sub: null,
+                      },
+                      {
+                        label: 'Next Renewal',
+                        value: maxioBilling.nextRenewalDate || '—',
+                        sub: maxioBilling.nextRenewalDate ? relativeDate(maxioBilling.nextRenewalDate) : null,
+                      },
+                    ].map(({ label, value, sub }) => (
+                      <div key={label} className="flex flex-col gap-0.5 group">
+                        <p className="text-[11px] text-rs-muted">{label}</p>
+                        <p className="text-base font-semibold text-rs-text leading-tight group-hover:text-rs-teal transition-colors">
+                          {value}
+                        </p>
+                        {sub && <p className="text-[11px] text-rs-muted">{sub}</p>}
+                      </div>
+                    ))}
+                  </div>
+                  {wonOpps.length > 0 && (
+                    <p className="text-xs text-rs-muted">
+                      {wonOpps.length} closed-won deal{wonOpps.length !== 1 ? 's' : ''} · {formatARR(wonARR)} ARR won
+                    </p>
+                  )}
+                </div>
+
+                {/* ARR trend chart fills remaining space */}
+                {maxioArrSeries.length > 0 && (
+                  <div className="flex-1 min-w-0 -mt-1">
+                    <MaxioArrChart data={maxioArrSeries} compact />
+                  </div>
+                )}
               </div>
-            )}
-            {!loading && wonOpps.length > 0 && (
-              <p className="text-xs text-rs-muted mt-3">
-                {wonOpps.length} closed-won deal{wonOpps.length !== 1 ? 's' : ''}, {formatARR(wonARR)} total ARR won
-              </p>
             )}
           </section>
 
-          {/* Product Usage (Snowflake) */}
+          {/* Open Deals — inline mini-table (Client Prospecting excluded),
+              click row → DealDetailPanel */}
+          <SectionCard
+            title="Open Deals"
+            badge={openOppsCount > 0 ? `${openOppsCount} open` : undefined}
+            loading={loading}
+          >
+            {pipelineOpps.length === 0 ? (
+              <p className="px-4 py-5 text-xs text-rs-muted">No open deals.</p>
+            ) : (
+              <table className="w-full table-fixed text-xs">
+                <thead>
+                  <tr className="text-rs-muted uppercase tracking-wide text-[10px] border-b border-rs-border bg-rs-surface">
+                    <th className="w-[38%] text-left px-4 py-2 font-semibold">Account</th>
+                    <th className="w-[28%] text-left px-3 py-2 font-semibold">Stage</th>
+                    <th className="w-[16%] text-right px-3 py-2 font-semibold">ARR</th>
+                    <th className="w-[18%] text-right px-3 py-2 font-semibold">Close Date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...pipelineOpps]
+                    .sort((a, b) => (a.CloseDate || '').localeCompare(b.CloseDate || ''))
+                    .map((deal) => (
+                      <tr key={deal.Id} onClick={() => setActiveDeal(deal)} className="border-b border-rs-border/50 hover:bg-rs-surface cursor-pointer transition-colors">
+                        <td className="px-4 py-2 truncate font-medium text-rs-text">{deal.Account?.Name || deal.Name || '—'}</td>
+                        <td className="px-3 py-2 truncate text-rs-muted">{deal.StageName || '—'}</td>
+                        <td className="px-3 py-2 text-right font-medium text-rs-text">{formatARR(deal.Annual_Recurring_Revenue_ARR__c ?? deal.Amount)}</td>
+                        <td className="px-3 py-2 text-right text-rs-muted whitespace-nowrap">{deal.CloseDate ? format(new Date(deal.CloseDate + 'T00:00:00'), 'MMM d') : '—'}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            )}
+          </SectionCard>
+
+          {/* Support Tickets — inline mini-table, click row → TicketDetailPanel */}
+          <SectionCard
+            title="Support Tickets (Freshdesk)"
+            badge={(() => { const n = externalData.tickets.filter(t => t.status === 2 || t.status === 3).length; return n > 0 ? `${n} open` : undefined; })()}
+            onViewAll={externalData.tickets.length > 0 ? () => setOpenPanel({ type: 'tickets' }) : undefined}
+            loading={externalDataLoading}
+          >
+            {externalData.tickets.length === 0 ? (
+              <p className="px-4 py-5 text-xs text-rs-muted">No tickets matched for this account.</p>
+            ) : (
+              <table className="w-full table-fixed text-xs">
+                <thead>
+                  <tr className="text-rs-muted uppercase tracking-wide text-[10px] border-b border-rs-border bg-rs-surface">
+                    <th className="w-[55%] text-left px-4 py-2 font-semibold">Subject</th>
+                    <th className="w-[20%] text-left px-3 py-2 font-semibold">Status</th>
+                    <th className="w-[25%] text-right px-3 py-2 font-semibold">Updated</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...externalData.tickets]
+                    .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))
+                    .slice(0, 5)
+                    .map((t) => (
+                      <tr key={t.id} onClick={() => setActiveTicket(t)} className="border-b border-rs-border/50 hover:bg-rs-surface cursor-pointer transition-colors">
+                        <td className="px-4 py-2 truncate text-rs-text">{t.subject || '—'}</td>
+                        <td className="px-3 py-2">
+                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${FD_STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>
+                            {FD_STATUS_LABELS[t.status] || t.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2 text-right text-rs-muted">{t.updated_at ? format(new Date(t.updated_at), 'MMM d') : '—'}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            )}
+          </SectionCard>
+
+          {/* Jira / L3 Issues — only shown when there are any */}
+          {(externalData.issues.length > 0 || l3Issues.length > 0) && (
+            <SectionCard
+              title="Jira Issues"
+              badge={(() => { const all = [...externalData.issues, ...l3Issues]; const open = all.filter(i => (i.fields?.status?.name || '').toLowerCase() !== 'done').length; return open > 0 ? `${open} open` : undefined; })()}
+              onViewAll={() => setOpenPanel({ type: 'issues' })}
+              loading={externalDataLoading}
+            >
+              <table className="w-full table-fixed text-xs">
+                <thead>
+                  <tr className="text-rs-muted uppercase tracking-wide text-[10px] border-b border-rs-border bg-rs-surface">
+                    <th className="w-[15%] text-left px-4 py-2 font-semibold">Key</th>
+                    <th className="w-[50%] text-left px-3 py-2 font-semibold">Summary</th>
+                    <th className="w-[20%] text-left px-3 py-2 font-semibold">Status</th>
+                    <th className="w-[15%] text-right px-3 py-2 font-semibold">Created</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...externalData.issues, ...l3Issues]
+                    .sort((a, b) => (b.fields?.created || '').localeCompare(a.fields?.created || ''))
+                    .slice(0, 5)
+                    .map((issue) => {
+                      const statusName = issue.fields?.status?.name || '—';
+                      const isDone = statusName.toLowerCase() === 'done';
+                      return (
+                        <tr
+                          key={issue.id}
+                          onClick={() => isL3Issue(issue) ? setActiveL3Issue(issue) : setActiveIssue(issue)}
+                          className="border-b border-rs-border/50 hover:bg-rs-surface cursor-pointer transition-colors"
+                        >
+                          <td className="px-4 py-2 font-mono text-rs-muted">{issue.key || '—'}</td>
+                          <td className="px-3 py-2 truncate text-rs-text">{issue.fields?.summary || '—'}</td>
+                          <td className="px-3 py-2">
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full whitespace-nowrap ${isDone ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'}`}>
+                              {statusName}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-right text-rs-muted whitespace-nowrap">
+                            {issue.fields?.created ? format(new Date(issue.fields.created), 'MMM d') : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                </tbody>
+              </table>
+            </SectionCard>
+          )}
+
+          {/* Live Batch Status — inline mini-table, click row → BatchDetailPanel */}
+          {externalData.dags.length > 0 && (
+            <SectionCard
+              title="Live Batch Status (Astronomer)"
+              badge={`${externalData.dags.length} DAG${externalData.dags.length !== 1 ? 's' : ''}`}
+              onViewAll={() => setOpenPanel({ type: 'liveDags' })}
+              loading={externalDataLoading}
+            >
+              <table className="w-full table-fixed text-xs">
+                <thead>
+                  <tr className="text-rs-muted uppercase tracking-wide text-[10px] border-b border-rs-border bg-rs-surface">
+                    <th className="w-[50%] text-left px-4 py-2 font-semibold">DAG</th>
+                    <th className="w-[20%] text-left px-3 py-2 font-semibold">Last Run</th>
+                    <th className="w-[30%] text-right px-3 py-2 font-semibold">Next Run</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {externalData.dags.map((dag) => {
+                    const lastRun = lastRunOf(dag);
+                    return (
+                      <tr key={dag.dag_id} onClick={() => setActiveDag(dag)} className="border-b border-rs-border/50 hover:bg-rs-surface cursor-pointer transition-colors">
+                        <td className="px-4 py-2 truncate text-rs-text font-medium">{dag.dag_id}</td>
+                        <td className="px-3 py-2">
+                          {lastRun?.state ? (
+                            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded whitespace-nowrap ${dagStateBadgeCls(lastRun.state)}`}>
+                              {lastRun.state}
+                            </span>
+                          ) : <span className="text-rs-muted">—</span>}
+                        </td>
+                        <td className="px-3 py-2 text-right text-rs-muted whitespace-nowrap">
+                          {dag.next_dagrun_run_after ? format(new Date(dag.next_dagrun_run_after), 'MMM d, h:mm a') : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </SectionCard>
+          )}
+
+          {/* Usage Trends — full inline usage section with all UsageCategoryPanel
+              controls: metrics grid, chart, user filter, user breakdown table */}
           <section>
-            <SectionLabel>Product Usage (Snowflake)</SectionLabel>
+            <SectionLabel>Usage (Snowflake)</SectionLabel>
             {usageLoading ? (
-              <div className="grid grid-cols-3 gap-3">
-                {[1, 2, 3].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
+              <div className="space-y-3">
+                <Skeleton className="h-14 w-full" />
+                <Skeleton className="h-48 w-full" />
               </div>
             ) : !usage?.mapped ? (
               <div className="bg-rs-surface border border-dashed border-rs-border rounded-lg p-6 text-center">
-                <p className="text-xs text-rs-muted">No Snowflake usage data mapped for this account — check Account Mapping</p>
+                <p className="text-xs text-rs-muted">No Snowflake usage data mapped for this account.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-3">
-                <StatTile
-                  label="Queries (30d)"
-                  value={formatNum(usageMetrics?.API_CALLS_30D)}
-                  onClick={() => setOpenPanel({ type: 'usage' })}
-                />
-                <StatTile
-                  label="Forecast Runs (30d)"
-                  value={formatNum(usageMetrics?.FORECASTS_30D)}
-                  onClick={() => setOpenPanel({ type: 'usage' })}
-                />
-                <StatTile
-                  label="Distinct Users (30d)"
-                  value={formatNum(distinctUsers?.DISTINCT_USERS)}
-                  onClick={() => setOpenPanel({ type: 'usage' })}
-                />
-                <StatTile
-                  label="Model Executions (30d)"
-                  value={formatNum(usageMetrics?.MODEL_EXECUTIONS_30D)}
-                  onClick={() => setOpenPanel({ type: 'usage' })}
-                />
-                <StatTile
-                  label="Avg API Latency (30d)"
-                  value={usageMetrics?.AVG_LATENCY_MS_30D != null ? `${Math.round(usageMetrics.AVG_LATENCY_MS_30D)}ms` : '—'}
-                  onClick={() => setOpenPanel({ type: 'usage' })}
-                />
-                <StatTile
-                  label="DaaS / RaaS Datasets"
-                  value={(usage.datasets || []).length}
-                  onClick={(usage.datasets || []).length > 0 ? () => setOpenPanel({ type: 'datasets' }) : undefined}
-                />
-              </div>
-            )}
-          </section>
+              <div className="space-y-4">
+                {/* Users filter + range picker */}
+                <div className="rounded-card border border-rs-border bg-white p-4 space-y-3">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-rs-muted">Users</p>
+                    <div className="flex gap-1">
+                      {USER_RANGES.map((r) => (
+                        <button
+                          key={r.key}
+                          onClick={() => setUsersDaysBack(r.key)}
+                          className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${
+                            usersDaysBack === r.key ? 'bg-rs-teal text-white border-rs-teal' : 'text-rs-muted border-rs-border hover:border-rs-teal/50'
+                          }`}
+                        >
+                          {r.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  {usersLoading ? (
+                    <div className="flex gap-1.5">
+                      {[1, 2, 3].map((i) => <div key={i} className="h-6 w-20 bg-rs-surface rounded-full animate-pulse" />)}
+                    </div>
+                  ) : users.length === 0 ? (
+                    <p className="text-xs text-rs-muted">No user-level activity in this range.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {users.map((u) => {
+                        const isSelected = selectedUserIds.has(u.RS_USER_ID);
+                        return (
+                          <button
+                            key={u.RS_USER_ID}
+                            onClick={() => toggleUser(u.RS_USER_ID)}
+                            className={`text-[11px] px-2 py-1 rounded-full border transition-colors flex items-center gap-1 ${
+                              isSelected ? 'bg-rs-teal text-white border-rs-teal' : 'text-rs-text border-rs-border hover:border-rs-teal/50'
+                            }`}
+                          >
+                            {u.RS_USER_ID}
+                            {u.USER_TYPE === 'System/Batch' && (
+                              <span className={`text-[9px] ${isSelected ? 'text-white/70' : 'text-purple-500'}`}>(sys)</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                      {selectedUserIds.size > 0 && (
+                        <button onClick={() => setSelectedUserIds(new Set())} className="text-[11px] px-2 py-1 rounded-full text-rs-muted hover:text-rs-text underline">
+                          Clear ({selectedUserIds.size})
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
 
-          {/* Support, Dev & Live Batch Status (Freshdesk / Jira / Astronomer) */}
-          <section>
-            <SectionLabel>Support, Dev &amp; Live Batch Status</SectionLabel>
-            {externalDataLoading ? (
-              <div className="grid grid-cols-4 gap-3">
-                {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-14 w-full" />)}
-              </div>
-            ) : (
-              <div className="grid grid-cols-4 gap-3">
-                <StatTile
-                  label="Open Tickets (Freshdesk)"
-                  value={externalData.tickets.filter(t => t.status === 2 || t.status === 3).length}
-                  onClick={externalData.tickets.length > 0 ? () => setOpenPanel({ type: 'tickets' }) : undefined}
-                />
-                <StatTile
-                  label="Jira Issues"
-                  value={externalData.issues.length}
-                  onClick={externalData.issues.length > 0 ? () => setOpenPanel({ type: 'issues' }) : undefined}
-                />
-                <StatTile
-                  label="L3 Tickets"
-                  value={l3Issues.length}
-                  onClick={l3Issues.length > 0 ? () => setOpenPanel({ type: 'l3' }) : undefined}
-                />
-                <StatTile
-                  label="Live DAGs (Astronomer)"
-                  value={externalData.dags.length}
-                  onClick={externalData.dags.length > 0 ? () => setOpenPanel({ type: 'liveDags' }) : undefined}
-                />
-              </div>
-            )}
-          </section>
+                {/* Chart + stats grid */}
+                <div className="rounded-card border border-rs-border bg-white p-4 space-y-4">
+                  {selectedAggregate ? (
+                    <>
+                      {chartActivityLoading ? (
+                        <div className="h-40 flex items-center justify-center text-xs text-rs-muted">Loading…</div>
+                      ) : chartActivity.length === 0 ? (
+                        <div className="h-40 flex items-center justify-center text-xs text-rs-muted">No run activity for this selection.</div>
+                      ) : (
+                        <RunActivityChart activity={chartActivity} height={220} />
+                      )}
+                      <div className="grid grid-cols-3 gap-3">
+                        {[
+                          { label: 'Total Runs',    value: selectedAggregate.runCount },
+                          { label: 'Query Runs',    value: selectedAggregate.queryCount },
+                          { label: 'Forecast Runs', value: selectedAggregate.forecastCount },
+                          { label: 'Active Days',   value: selectedAggregate.activeDays },
+                          { label: 'Loans',         value: selectedAggregate.loanCount || null },
+                          { label: 'Securities',    value: selectedAggregate.securityCount || null },
+                        ].map(({ label, value }) => (
+                          <div key={label} className="rounded-lg border border-rs-border bg-rs-surface p-3">
+                            <p className="text-[11px] text-rs-muted mb-0.5">{label}</p>
+                            <p className="text-sm font-semibold text-rs-text">{value != null ? Math.round(value).toLocaleString() : '—'}</p>
+                          </div>
+                        ))}
+                      </div>
+                      {selectedAggregate.securityTypes.length > 0 && (
+                        <div>
+                          <p className="text-[10px] text-rs-muted mb-1">Security type</p>
+                          <TypePills counts={Object.fromEntries(selectedAggregate.securityTypes)} />
+                        </div>
+                      )}
+                      {selectedAggregate.analyticsTypes.length > 0 && (
+                        <div>
+                          <p className="text-[10px] text-rs-muted mb-1">Forecast type</p>
+                          <TypePills counts={Object.fromEntries(selectedAggregate.analyticsTypes)} />
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <UsageChart accountId={accountId} clientId={usageClientId} onWindowChange={setChartWindow} />
+                      <div className="grid grid-cols-3 gap-3">
+                        {METRICS.map((m) => (
+                          <div key={m.key} className="rounded-lg border border-rs-border bg-rs-surface p-3">
+                            <p className="text-[11px] text-rs-muted mb-0.5">{m.label} ({chartWindow.lookbackLabel})</p>
+                            <p className="text-sm font-semibold text-rs-text">
+                              {chartWindow.loading ? '…' : formatMetricValue(m, aggregateMetric(chartWindow.dailyRows, m))}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                      {(distinctUsers?.USER_RUNS || distinctUsers?.SYSTEM_RUNS) ? (
+                        <p className="text-[11px] text-rs-muted">
+                          {formatNum(distinctUsers.USER_DISTINCT_USERS)} end user{distinctUsers.USER_DISTINCT_USERS === 1 ? '' : 's'} ({formatNum(distinctUsers.USER_RUNS)} runs) ·{' '}
+                          {formatNum(distinctUsers.SYSTEM_DISTINCT_USERS)} system/batch account{distinctUsers.SYSTEM_DISTINCT_USERS === 1 ? '' : 's'} ({formatNum(distinctUsers.SYSTEM_RUNS)} runs)
+                        </p>
+                      ) : null}
+                      {servers.length > 0 && (
+                        <div>
+                          <p className="text-[10px] text-rs-muted mb-1">Forecast runs by server (30 days)</p>
+                          <div className="flex flex-wrap gap-2">
+                            {servers.map((s) => (
+                              <span key={s.SERVER_NAME} className="text-[11px] bg-rs-surface border border-rs-border/50 rounded-full px-2 py-0.5">
+                                {s.SERVER_NAME}: <span className="font-semibold text-rs-text">{formatNum(s.RUN_COUNT)}</span>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
 
-          {/* Usage Trends — same flexible chart as the Usage drill-down, given
-              room to breathe here since it has no natural drill-down further */}
-          <section>
-            <SectionLabel>Usage Trends</SectionLabel>
-            {usage?.mapped && (
-              <UsageChart accountId={accountId} clientId={usage?.clientId} />
+                {/* DaaS/RaaS link */}
+                {(usage?.datasets || []).length > 0 && (
+                  <div className="flex justify-end">
+                    <button onClick={() => setOpenPanel({ type: 'datasets' })} className="text-xs text-rs-teal hover:underline">
+                      View {usage.datasets.length} DaaS/RaaS dataset{usage.datasets.length !== 1 ? 's' : ''} →
+                    </button>
+                  </div>
+                )}
+
+                {/* User breakdown table */}
+                <div className="rounded-card border border-rs-border bg-white overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-rs-border bg-rs-surface">
+                    <p className="text-[10px] font-semibold uppercase tracking-widest text-rs-muted">User Breakdown</p>
+                    {selectedUserIds.size === 0 && (
+                      <div className="flex gap-1">
+                        {USER_TYPE_FILTERS.map((f) => (
+                          <button
+                            key={f.key}
+                            onClick={() => setUserTypeFilter(f.key)}
+                            className={`text-[11px] px-2 py-1 rounded-full border transition-colors ${
+                              userTypeFilter === f.key ? 'bg-rs-teal text-white border-rs-teal' : 'text-rs-muted border-rs-border hover:border-rs-teal/50'
+                            }`}
+                          >
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  {usersLoading ? (
+                    <div className="p-4 space-y-2">
+                      {[1, 2, 3].map((i) => <div key={i} className="h-8 bg-rs-surface rounded animate-pulse" />)}
+                    </div>
+                  ) : tableUsers.length === 0 ? (
+                    <p className="px-4 py-5 text-xs text-rs-muted">No user activity in this range.</p>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="text-rs-muted uppercase tracking-wide text-[10px] border-b border-rs-border">
+                            <th className="text-left py-2 px-3 font-semibold">User</th>
+                            <th className="text-left py-2 pr-2 font-semibold">Type</th>
+                            <th className="text-right py-2 pr-2 font-semibold">Runs</th>
+                            <th className="text-right py-2 pr-2 font-semibold">Query</th>
+                            <th className="text-right py-2 pr-2 font-semibold">Forecast</th>
+                            <th className="text-right py-2 pr-2 font-semibold">Active Days</th>
+                            <th className="text-right py-2 pr-2 font-semibold">Loans</th>
+                            <th className="text-left py-2 pr-2 font-semibold">Security Type</th>
+                            <th className="text-left py-2 pr-2 font-semibold">Forecast Type</th>
+                            <th className="text-left py-2 pr-2 font-semibold">Last Active</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {tableUsers.map((u) => {
+                            const isExpanded = expandedUserId === u.RS_USER_ID;
+                            return (
+                              <Fragment key={u.RS_USER_ID}>
+                                <tr className="border-b border-rs-border/50 hover:bg-rs-surface/60 transition-colors">
+                                  <td className="py-2 px-3 text-rs-text font-medium">{u.RS_USER_ID}</td>
+                                  <td className="py-2 pr-2">
+                                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${u.USER_TYPE === 'System/Batch' ? 'bg-purple-100 text-purple-700' : 'bg-teal-50 text-rs-teal'}`}>
+                                      {u.USER_TYPE === 'System/Batch' ? 'Sys/Batch' : 'User'}
+                                    </span>
+                                  </td>
+                                  <td className="py-2 pr-2 text-right text-rs-text font-medium">{formatNum(u.RUN_COUNT)}</td>
+                                  <td className="py-2 pr-2 text-right">
+                                    <button onClick={() => setExpandedUserId(isExpanded ? null : u.RS_USER_ID)} className="text-rs-teal font-medium hover:underline">
+                                      {formatNum(u.QUERY_COUNT)}
+                                    </button>
+                                  </td>
+                                  <td className="py-2 pr-2 text-right">
+                                    <button onClick={() => setExpandedUserId(isExpanded ? null : u.RS_USER_ID)} className="text-amber-600 font-medium hover:underline">
+                                      {formatNum(u.FORECAST_COUNT)}
+                                    </button>
+                                  </td>
+                                  <td className="py-2 pr-2 text-right text-rs-muted">{formatNum(u.ACTIVE_DAYS)}</td>
+                                  <td className="py-2 pr-2 text-right text-rs-muted">{u.LOAN_COUNT ? formatNum(u.LOAN_COUNT) : '—'}</td>
+                                  <td className="py-2 pr-2 max-w-[200px]"><TypePills counts={u.SECURITY_TYPES} /></td>
+                                  <td className="py-2 pr-2 max-w-[200px]"><TypePills counts={u.ANALYTICS_TYPES} /></td>
+                                  <td className="py-2 pr-2 text-rs-muted whitespace-nowrap">{relativeDate(u.LAST_ACTIVE)}</td>
+                                </tr>
+                                {isExpanded && (
+                                  <UserActivityRow
+                                    userId={u.RS_USER_ID}
+                                    accountId={accountId}
+                                    clientId={usageClientId}
+                                    daysBack={usersDaysBack}
+                                  />
+                                )}
+                              </Fragment>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </section>
         </div>
@@ -659,13 +1195,6 @@ export default function AccountView({ accountId, onBack }) {
       <ActivityListPanel
         activities={openPanel?.type === 'activity' ? allActivities : null}
         onClose={() => setOpenPanel(null)}
-      />
-      <UsageCategoryPanel
-        open={openPanel?.type === 'usage'}
-        onClose={() => setOpenPanel(null)}
-        usage={usage}
-        accountId={accountId}
-        clientId={usage?.clientId}
       />
       <SimpleTablePanel
         open={openPanel?.type === 'datasets'}

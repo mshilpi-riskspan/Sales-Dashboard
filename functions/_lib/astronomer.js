@@ -32,8 +32,19 @@ async function astroFetch(env, path) {
 }
 
 async function fetchDags(env) {
-  const result = await astroFetch(env, '/dags?limit=200');
-  return result.dags || [];
+  const PAGE = 100;
+  const first = await astroFetch(env, `/dags?limit=${PAGE}&offset=0`);
+  const allDags = [...(first.dags || [])];
+  const total = first.total_entries ?? first.totalEntries ?? allDags.length;
+  let offset = PAGE;
+  while (offset < total) {
+    const page = await astroFetch(env, `/dags?limit=${PAGE}&offset=${offset}`);
+    const batch = page.dags || [];
+    allDags.push(...batch);
+    if (batch.length < PAGE) break;
+    offset += PAGE;
+  }
+  return allDags;
 }
 
 // Airflow 3's Astro API may key run results as `dag_runs` or `items`

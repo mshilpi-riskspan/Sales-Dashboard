@@ -12,7 +12,7 @@ function formatMoney(v) {
 // Trailing-24-month Maxio ARR trend — see buildMaxioArrSeries in
 // src/lib/externalDataMatch.js for how each month's value is derived from
 // the same subscription line items shown in the table below.
-export default function MaxioArrChart({ data }) {
+export default function MaxioArrChart({ data, compact = false }) {
   const domain = useMemo(() => {
     if (!data) return [0, 0];
     const values = data.map((d) => d.arr).filter((v) => v > 0);
@@ -33,7 +33,7 @@ export default function MaxioArrChart({ data }) {
   const delta = first != null && last != null ? last - first : null;
 
   return (
-    <div className="mb-4 pb-4 border-b border-rs-border">
+    <div className={compact ? '' : 'mb-4 pb-4 border-b border-rs-border'}>
       <div className="flex items-center justify-between mb-1">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-rs-muted">ARR Trend (24mo)</p>
         {delta != null && delta !== 0 && (

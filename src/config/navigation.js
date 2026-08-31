@@ -11,6 +11,7 @@ import CalendarPage from '../modules/calendar/CalendarPage';
 import RepKPIs from '../modules/repkpis/RepKPIs';
 import CampaignsPage from '../modules/campaigns/CampaignsPage';
 import AccountMapping from '../modules/settings/AccountMapping';
+import FreshdeskDashboard from '../modules/tickets/FreshdeskDashboard';
 
 export const NAV_ITEMS = [
   {
@@ -39,6 +40,13 @@ export const NAV_ITEMS = [
     label: 'Batch Ops',
     icon: 'ServerIcon',
     component: OpsPage,
+    filters: [],
+  },
+  {
+    id: 'support',
+    label: 'Support',
+    icon: 'TicketIcon',
+    component: FreshdeskDashboard,
     filters: [],
   },
   {

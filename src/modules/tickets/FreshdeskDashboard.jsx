@@ -102,8 +102,13 @@ export default function FreshdeskDashboard() {
   const [l3Sort,  setL3Sort]    = useState({ key: 'total', dir: 'desc' });
   const [subSort, setSubSort]   = useState({ key: 'count', dir: 'desc' });
 
-  const tickets    = fdQ.data?.tickets   ?? [];
-  const jiraIssues = jiraQ.data?.issues  ?? [];
+  const tickets      = fdQ.data?.tickets    ?? [];
+  const jiraIssues   = jiraQ.data?.issues   ?? [];
+  const companiesById = useMemo(() => {
+    const map = new Map();
+    for (const c of fdQ.data?.companies ?? []) map.set(c.id, c.name);
+    return map;
+  }, [fdQ.data?.companies]);
 
   // Date-range filter
   const filtered = useMemo(() => {
@@ -657,6 +662,7 @@ export default function FreshdeskDashboard() {
           tickets={drill.tickets}
           title={drill.title}
           jiraIssues={jiraIssues}
+          companiesById={companiesById}
           onClose={() => setDrill(null)}
         />
       )}

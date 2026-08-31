@@ -20,7 +20,7 @@ const FD_STATUS_COLORS = {
 
 const JIRA_KEY_RE = /^(LVL3|EDGE|RSA)-\d+$/;
 
-export default function TicketDrillPanel({ tickets, title, jiraIssues = [], onClose }) {
+export default function TicketDrillPanel({ tickets, title, jiraIssues = [], companiesById = new Map(), onClose }) {
   const [activeTicket, setActiveTicket] = useState(null);
   const [activeJira, setActiveJira] = useState(null);
 
@@ -85,19 +85,22 @@ export default function TicketDrillPanel({ tickets, title, jiraIssues = [], onCl
                   >
                     <td className="py-2.5 pr-3">
                       <p className="text-rs-text truncate max-w-[260px]">{t.subject || '—'}</p>
-                      {jiraTags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {jiraTags.map((tag) => (
-                            <button
-                              key={tag}
-                              onClick={(e) => handleJiraTag(tag, e)}
-                              className="text-[9px] font-semibold bg-rs-teal/10 text-rs-teal border border-rs-teal/20 rounded-full px-1.5 py-0.5 hover:bg-rs-teal/20 transition-colors"
-                            >
-                              {tag}
-                            </button>
-                          ))}
-                        </div>
-                      )}
+                      <div className="flex flex-wrap items-center gap-1 mt-1">
+                        {t.company_id && companiesById.get(t.company_id) && (
+                          <span className="text-[9px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 rounded-full px-1.5 py-0.5">
+                            {companiesById.get(t.company_id)}
+                          </span>
+                        )}
+                        {jiraTags.map((tag) => (
+                          <button
+                            key={tag}
+                            onClick={(e) => handleJiraTag(tag, e)}
+                            className="text-[9px] font-semibold bg-rs-teal/10 text-rs-teal border border-rs-teal/20 rounded-full px-1.5 py-0.5 hover:bg-rs-teal/20 transition-colors"
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
                     </td>
                     <td className="py-2.5 pr-3 whitespace-nowrap">
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${FD_STATUS_COLORS[t.status] || 'bg-slate-100 text-slate-500'}`}>

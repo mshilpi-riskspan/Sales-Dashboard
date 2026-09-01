@@ -149,6 +149,7 @@ export default function FreshdeskDashboard() {
     const l3edgeOpen     = cats.l3edge.filter(isOpen).length;
     return {
       total:          filtered.length,
+      openCount:      filtered.filter(isOpen).length,
       l3edgeCount:    cats.l3edge.length,
       l3edgePct:      pct(cats.l3edge.length, filtered.length),
       l3edgeResPct:   pct(l3edgeResolved, cats.l3edge.length),
@@ -301,12 +302,18 @@ export default function FreshdeskDashboard() {
       </div>
 
       {/* ── KPI Strip ──────────────────────────────────────── */}
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-5 gap-4 mb-6">
         <KpiCard
           title="Total Tickets"
           value={kpis.total}
           subtitle={`Last ${rangeLabel}`}
           onClick={() => setDrill({ tickets: filtered, title: 'All Tickets' })}
+        />
+        <KpiCard
+          title="Open Tickets"
+          value={kpis.openCount}
+          subtitle={`${pct(kpis.openCount, kpis.total)}% unresolved`}
+          onClick={() => setDrill({ tickets: filtered.filter(isOpen), title: 'Open Tickets' })}
         />
         <KpiCard
           title="L3 + Edge"

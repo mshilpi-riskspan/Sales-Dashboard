@@ -97,8 +97,10 @@ export default function FreshdeskDashboard() {
   const fdQ   = useSalesforceQuery(fetchFreshdeskData);
   const jiraQ = useSalesforceQuery(fetchJiraData);
 
-  const [daysBack, setDaysBack] = useState('30');
-  const [drill, setDrill]       = useState(null); // { tickets, title } or null
+  const [daysBack, setDaysBack]       = useState('30');
+  const [customStart, setCustomStart] = useState('');
+  const [customEnd,   setCustomEnd]   = useState('');
+  const [drill, setDrill]             = useState(null); // { tickets, title } or null
   const [l3Sort,  setL3Sort]    = useState({ key: 'total', dir: 'desc' });
   const [subSort, setSubSort]   = useState({ key: 'count', dir: 'desc' });
 
@@ -112,10 +114,21 @@ export default function FreshdeskDashboard() {
 
   // Date-range filter
   const filtered = useMemo(() => {
+    if (daysBack === 'custom') {
+      const start = customStart ? new Date(customStart) : null;
+      const end   = customEnd   ? new Date(customEnd + 'T23:59:59') : null;
+      return tickets.filter((t) => {
+        if (!t.created_at) return false;
+        const d = new Date(t.created_at);
+        if (start && d < start) return false;
+        if (end   && d > end)   return false;
+        return true;
+      });
+    }
     const cutoff = new Date();
     cutoff.setDate(cutoff.getDate() - parseInt(daysBack, 10));
     return tickets.filter((t) => t.created_at && new Date(t.created_at) >= cutoff);
-  }, [tickets, daysBack]);
+  }, [tickets, daysBack, customStart, customEnd]);
 
   // Categorize
   const cats = useMemo(() => {
@@ -220,7 +233,11 @@ export default function FreshdeskDashboard() {
   const sortedL3  = useMemo(() => sortRows(l3edgeByType,    l3Sort.key,  l3Sort.dir),  [l3edgeByType,    l3Sort]);
   const sortedSub = useMemo(() => sortRows(substantiveByType, subSort.key, subSort.dir), [substantiveByType, subSort]);
 
-  const rangeLabel = RANGE_OPTS.find((o) => o.key === daysBack)?.label ?? '1M';
+  const rangeLabel = daysBack === 'custom'
+    ? (customStart || customEnd
+        ? `${customStart || '…'} – ${customEnd || '…'}`
+        : 'Custom range')
+    : (RANGE_OPTS.find((o) => o.key === daysBack)?.label ?? '1M');
 
   if (fdQ.loading) {
     return <div className="flex items-center justify-center py-20"><LoadingSpinner size="lg" /></div>;
@@ -232,25 +249,54 @@ export default function FreshdeskDashboard() {
   return (
     <div>
       {/* ── Header ─────────────────────────────────────────── */}
-      <div className="flex items-center justify-between mb-5">
+      <div className="flex items-start justify-between mb-5">
         <div>
           <h2 className="text-lg font-bold text-rs-text">Support Tickets</h2>
           <p className="text-xs text-rs-muted mt-0.5">{filtered.length} tickets · Freshdesk</p>
         </div>
-        <div className="flex gap-1 bg-rs-surface rounded-lg p-1">
-          {RANGE_OPTS.map((opt) => (
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex gap-1 bg-rs-surface rounded-lg p-1">
+            {RANGE_OPTS.map((opt) => (
+              <button
+                key={opt.key}
+                onClick={() => setDaysBack(opt.key)}
+                className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
+                  daysBack === opt.key
+                    ? 'bg-white text-rs-teal shadow-sm border border-rs-border'
+                    : 'text-rs-muted hover:text-rs-text'
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
             <button
-              key={opt.key}
-              onClick={() => setDaysBack(opt.key)}
+              onClick={() => setDaysBack('custom')}
               className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
-                daysBack === opt.key
+                daysBack === 'custom'
                   ? 'bg-white text-rs-teal shadow-sm border border-rs-border'
                   : 'text-rs-muted hover:text-rs-text'
               }`}
             >
-              {opt.label}
+              Custom
             </button>
-          ))}
+          </div>
+          {daysBack === 'custom' && (
+            <div className="flex items-center gap-2">
+              <input
+                type="date"
+                value={customStart}
+                onChange={(e) => setCustomStart(e.target.value)}
+                className="text-xs border border-rs-border rounded-md px-2 py-1 text-rs-text bg-white focus:outline-none focus:ring-1 focus:ring-rs-teal"
+              />
+              <span className="text-xs text-rs-muted">–</span>
+              <input
+                type="date"
+                value={customEnd}
+                onChange={(e) => setCustomEnd(e.target.value)}
+                className="text-xs border border-rs-border rounded-md px-2 py-1 text-rs-text bg-white focus:outline-none focus:ring-1 focus:ring-rs-teal"
+              />
+            </div>
+          )}
         </div>
       </div>
 

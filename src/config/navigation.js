@@ -11,6 +11,7 @@ import CalendarPage from '../modules/calendar/CalendarPage';
 import RepKPIs from '../modules/repkpis/RepKPIs';
 import CampaignsPage from '../modules/campaigns/CampaignsPage';
 import AccountMapping from '../modules/settings/AccountMapping';
+import CompanyMappingPage from '../modules/settings/CompanyMappingPage';
 import FreshdeskDashboard from '../modules/tickets/FreshdeskDashboard';
 
 export const NAV_ITEMS = [
@@ -110,6 +111,13 @@ export const NAV_ITEMS = [
     label: 'Account Mapping',
     icon: 'ArrowsRightLeftIcon',
     component: AccountMapping,
+    filters: [],
+  },
+  {
+    id: 'company-mapping',
+    label: 'Company Mapping',
+    icon: 'ArrowsRightLeftIcon',
+    component: CompanyMappingPage,
     filters: [],
   },
 ];

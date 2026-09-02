@@ -9,6 +9,7 @@ import { fetchFreshdeskData, fetchTicketDetail as fetchTicketDetailLib } from '.
 import { fetchJiraData } from './functions/_lib/jira.js';
 import { fetchAstronomerData } from './functions/_lib/astronomer.js';
 import { fetchMaxioCustomers, fetchMaxioContracts, fetchMaxioTransactions, fetchMaxioItems } from './functions/_lib/maxio.js';
+import { fetchCompanyMap, updateCompanyMapField } from './functions/_lib/companyMapping.js';
 
 // Stores instance URL after SOAP login — set via POST /sf-instance-url from the app
 let sfInstanceUrl = null;
@@ -259,6 +260,37 @@ export default defineConfig(({ mode }) => {
               }
             });
           }
+
+          // Local mirror of functions/api/snowflake/mapping.js
+          server.middlewares.use('/api/snowflake/mapping', async (req, res) => {
+            if (req.method === 'GET') {
+              try {
+                const rows = await fetchCompanyMap(env);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(rows));
+              } catch (err) {
+                res.writeHead(500, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: err.message }));
+              }
+            } else if (req.method === 'PATCH') {
+              let body = '';
+              req.on('data', (c) => { body += c; });
+              req.on('end', async () => {
+                try {
+                  const { id, field, value } = JSON.parse(body);
+                  await updateCompanyMapField(env, id, field, value);
+                  res.writeHead(200, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ ok: true }));
+                } catch (err) {
+                  res.writeHead(400, { 'Content-Type': 'application/json' });
+                  res.end(JSON.stringify({ error: err.message }));
+                }
+              });
+            } else {
+              res.writeHead(405);
+              res.end();
+            }
+          });
         },
       },
     ],

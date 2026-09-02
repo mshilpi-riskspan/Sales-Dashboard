@@ -1,5 +1,10 @@
 import type { Env } from './types';
 
+// Wrap any JSON-serialisable value that maps to a VARIANT column
+export class JsonVariant {
+  constructor(public readonly value: unknown) {}
+}
+
 interface SnowflakeResponse {
   resultSetMetaData?: { rowType: { name: string }[] };
   data?: string[][];
@@ -15,6 +20,7 @@ export class SnowflakeClient {
   private database: string;
   private schema: string;
   private role: string;
+  private _cachedJwt: string | null = null; // reuse within one invocation — RSA sign is expensive
 
   constructor(env: Env) {
     this.account = env.SNOWFLAKE_ACCOUNT;
@@ -67,15 +73,17 @@ export class SnowflakeClient {
   }
 
   async getJwt(): Promise<string> {
+    if (this._cachedJwt) return this._cachedJwt;
     const pem = this.normalizePem(this.privateKey);
     const acct = this.account.toUpperCase();
     const user = this.user.toUpperCase();
     const fp = await this.getFingerprint(pem);
     const now = Math.floor(Date.now() / 1000);
-    return this.signJwt(
+    this._cachedJwt = await this.signJwt(
       { iss: `${acct}.${user}.${fp}`, sub: `${acct}.${user}`, iat: now, exp: now + 3600 },
       { alg: 'RS256', typ: 'JWT' }
     );
+    return this._cachedJwt;
   }
 
   async execute(statement: string): Promise<{ columns: string[]; rows: string[][] }> {
@@ -107,19 +115,33 @@ export class SnowflakeClient {
     return { columns, rows: json.data ?? [] };
   }
 
-  async mergeRows(table: string, idCol: string, cols: string[], rows: (string | number | boolean | null)[][]): Promise<number> {
+  async mergeRows(table: string, idCol: string, cols: string[], rows: (string | number | boolean | null | JsonVariant)[][]): Promise<number> {
     if (rows.length === 0) return 0;
     const BATCH = 100;
     let total = 0;
+    // Plain scalar for VALUES clause (no function calls allowed there)
+    const fmtVal = (v: unknown): string => {
+      if (v === null || v === undefined) return 'NULL';
+      if (v instanceof JsonVariant) return v.value == null ? 'NULL' : `'${JSON.stringify(v.value).replace(/'/g, "''")}'`;
+      if (typeof v === 'string') return `'${v.replace(/'/g, "''")}'`;
+      return String(v); // number | boolean
+    };
     for (let i = 0; i < rows.length; i += BATCH) {
       const batch = rows.slice(i, i + BATCH);
-      const values = batch.map(r =>
-        `(${r.map(v => v === null ? 'NULL' : typeof v === 'string' ? `'${v.replace(/'/g, "''")}'` : String(v)).join(', ')})`
-      ).join(',\n');
+      // Detect which column indexes hold VARIANT (JsonVariant) values
+      const variantCols = new Set<number>();
+      for (const row of batch) {
+        row.forEach((v, idx) => { if (v instanceof JsonVariant) variantCols.add(idx); });
+      }
+      const values = batch.map(r => `(${r.map(fmtVal).join(', ')})`).join(',\n');
+      // For VARIANT cols, wrap the positional ref with PARSE_JSON in SELECT
+      const selectCols = cols.map((c, idx) =>
+        variantCols.has(idx) ? `PARSE_JSON($${idx + 1}) AS ${c}` : `$${idx + 1} AS ${c}`
+      ).join(', ');
       const setClauses = cols.filter(c => c !== idCol).map(c => `t.${c} = s.${c}`).join(', ');
       const sql = `
         MERGE INTO ${table} AS t
-        USING (SELECT ${cols.map((c, idx) => `$${idx + 1} AS ${c}`).join(', ')} FROM VALUES ${values}) AS s
+        USING (SELECT ${selectCols} FROM VALUES ${values}) AS s
         ON t.${idCol} = s.${idCol}
         WHEN MATCHED THEN UPDATE SET ${setClauses}
         WHEN NOT MATCHED THEN INSERT (${cols.join(', ')}) VALUES (${cols.map(c => `s.${c}`).join(', ')})

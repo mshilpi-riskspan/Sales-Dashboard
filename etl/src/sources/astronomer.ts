@@ -1,4 +1,5 @@
 import type { Env, SyncResult } from '../types';
+import { JsonVariant } from '../snowflake';
 import type { SnowflakeClient } from '../snowflake';
 
 const PAGE_LIMIT = 100;
@@ -34,7 +35,7 @@ export async function syncAstronomer(sf: SnowflakeClient, env: Env): Promise<Syn
       d.dag_id as string,
       d.is_paused as boolean,
       d.has_import_errors as boolean,
-      JSON.stringify(d.tags ?? []),
+      new JsonVariant(d.tags ?? []),
       (d.next_dagrun_data_interval_start as string) ?? (d.next_dagrun as string) ?? null,
       now,
     ]);

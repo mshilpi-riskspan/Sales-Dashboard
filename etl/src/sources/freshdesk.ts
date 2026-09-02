@@ -1,4 +1,5 @@
 import type { Env, SyncResult } from '../types';
+import { JsonVariant } from '../snowflake';
 import type { SnowflakeClient } from '../snowflake';
 
 const PAGE_SIZE = 100;
@@ -52,7 +53,7 @@ export async function syncFreshdesk(sf: SnowflakeClient, env: Env): Promise<Sync
   let watermark: string | null = null;
   try {
     watermark = await sf.getWatermark(watermarkKey, env.ETL_KV);
-    const tickets = await fetchAllPages('/tickets?include=tags', env, watermark) as Record<string, unknown>[];
+    const tickets = await fetchAllPages('/tickets?include=company', env, watermark) as Record<string, unknown>[];
     const rows = tickets.map(t => [
       t.id as number,
       (t.company_id as number) ?? null,
@@ -61,7 +62,7 @@ export async function syncFreshdesk(sf: SnowflakeClient, env: Env): Promise<Sync
       t.status as number,
       t.priority as number,
       (t.is_escalated as boolean) ?? false,
-      JSON.stringify(t.tags ?? []),
+      new JsonVariant(t.tags ?? []),
       t.created_at as string,
       t.updated_at as string,
       (t.first_responded_at as string) ?? null,
@@ -74,9 +75,13 @@ export async function syncFreshdesk(sf: SnowflakeClient, env: Env): Promise<Sync
     await sf.setWatermark(watermarkKey, now, env.ETL_KV);
     results.push({ source: 'freshdesk', table: 'FD_TICKETS', upserted: n });
 
-    // Conversations — only for tickets updated since watermark
+    // Conversations — skip on first run (no watermark) to avoid per-ticket subrequest explosion.
+    // From run 2 onward, watermark limits tickets to recently-updated ones (small set).
     let convCount = 0;
-    for (const ticket of tickets) {
+    if (!watermark) {
+      results.push({ source: 'freshdesk', table: 'FD_CONVERSATIONS', upserted: 0 });
+    }
+    for (const ticket of watermark ? tickets : []) {
       try {
         const convs = await fdGet(`/tickets/${ticket.id}/conversations`, env) as Record<string, unknown>[];
         const crows = convs.map(c => [

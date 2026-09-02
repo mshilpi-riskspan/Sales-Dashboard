@@ -1,36 +1,34 @@
 import type { Env, SyncResult } from '../types';
 import type { SnowflakeClient } from '../snowflake';
 
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 100; // server-enforced cap
 
 async function maxioGet(path: string, env: Env): Promise<unknown> {
   const base = env.MAXIO_BASE_URL.replace(/\/$/, '');
-  const res = await fetch(`${base}${path}`, {
-    headers: {
-      Authorization: `Basic ${btoa(`${env.MAXIO_API_TOKEN}:X`)}`,
-      Accept: 'application/json',
-    },
-  });
-  if (!res.ok) throw new Error(`Maxio ${path}: ${res.status} ${await res.text()}`);
-  return res.json();
-}
-
-async function fetchPages<T>(basePath: string, key: string, env: Env): Promise<T[]> {
-  const items: T[] = [];
-  let page = 1;
-  while (true) {
-    const sep = basePath.includes('?') ? '&' : '?';
-    const data = await maxioGet(`${basePath}${sep}page=${page}&per_page=${PAGE_SIZE}`, env) as T[];
-    if (!Array.isArray(data) || data.length === 0) break;
-    const unwrapped = data.map((item: unknown) => {
-      const rec = item as Record<string, unknown>;
-      return (rec[key] ?? item) as T;
+  const sep = path.includes('?') ? '&' : '?';
+  let url = `${base}${path}${sep}per_page=${PAGE_SIZE}`;
+  const items: Record<string, unknown>[] = [];
+  while (url) {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Token ${env.MAXIO_API_TOKEN}`,
+        Accept: 'application/json',
+      },
     });
-    items.push(...unwrapped);
-    if (data.length < PAGE_SIZE) break;
-    page++;
+    if (!res.ok) throw new Error(`Maxio ${path}: ${res.status} ${(await res.text()).slice(0, 300)}`);
+    const data = await res.json() as unknown;
+    const page: Record<string, unknown>[] = Array.isArray(data) ? data : [];
+    items.push(...page);
+    // Follow DRF-style next link if present
+    const nextUrl = (data as Record<string, unknown>)?.next as string | undefined;
+    url = (nextUrl && page.length === PAGE_SIZE) ? nextUrl : '';
   }
   return items;
+}
+
+async function fetchAll<T>(path: string, key: string, env: Env): Promise<T[]> {
+  const raw = await maxioGet(path, env) as Record<string, unknown>[];
+  return raw.map(item => (item[key] ?? item) as T);
 }
 
 export async function syncMaxio(sf: SnowflakeClient, env: Env): Promise<SyncResult[]> {
@@ -39,7 +37,7 @@ export async function syncMaxio(sf: SnowflakeClient, env: Env): Promise<SyncResu
 
   // Customers
   try {
-    const customers = await fetchPages<Record<string, unknown>>('/customers.json', 'customer', env);
+    const customers = await fetchAll<Record<string, unknown>>('/customers', 'customer', env);
     const rows = customers.map(c => [
       c.id as number,
       (c.sf_id as string) ?? null,
@@ -58,7 +56,7 @@ export async function syncMaxio(sf: SnowflakeClient, env: Env): Promise<SyncResu
 
   // Products/Items
   try {
-    const products = await fetchPages<Record<string, unknown>>('/products.json', 'product', env);
+    const products = await fetchAll<Record<string, unknown>>('/items', 'item', env);
     const rows = products.map(p => [p.id as number, (p.name as string) ?? null, now]);
     const n = await sf.mergeRows('MAXIO_ITEMS', 'ID', ['ID', 'NAME', '_SYNCED_AT'], rows);
     results.push({ source: 'maxio', table: 'MAXIO_ITEMS', upserted: n });
@@ -70,7 +68,7 @@ export async function syncMaxio(sf: SnowflakeClient, env: Env): Promise<SyncResu
   try {
     const watermark = await sf.getWatermark('maxio_contracts', env.ETL_KV);
     const since = watermark ? `&date_field=updated_at&start_date=${watermark.slice(0, 10)}` : '';
-    const subs = await fetchPages<Record<string, unknown>>(`/subscriptions.json?include[]=components${since}`, 'subscription', env);
+    const subs = await fetchAll<Record<string, unknown>>(`/contracts${since ? '?updated_since=' + since.slice(0, 10) : ''}`, 'contract', env);
     const contractRows = subs.map(s => [s.id as number, (s.customer as Record<string, unknown>)?.id as number ?? null, now]);
     const nc = await sf.mergeRows('MAXIO_CONTRACTS', 'ID', ['ID', 'CUSTOMER_ID', '_SYNCED_AT'], contractRows);
     results.push({ source: 'maxio', table: 'MAXIO_CONTRACTS', upserted: nc });
@@ -79,7 +77,7 @@ export async function syncMaxio(sf: SnowflakeClient, env: Env): Promise<SyncResu
     const txRows: (string | number | boolean | null)[][] = [];
     for (const sub of subs) {
       try {
-        const txs = await maxioGet(`/subscriptions/${sub.id}/transactions.json?kinds[]=payment&kinds[]=charge&per_page=200`, env) as Record<string, unknown>[];
+        const txs = await maxioGet(`/contracts/${sub.id}/transactions`, env) as Record<string, unknown>[];
         for (const tx of txs) {
           const t = (tx.transaction ?? tx) as Record<string, unknown>;
           txRows.push([

@@ -20,7 +20,7 @@ async function searchIssues(jql: string, env: Env): Promise<Record<string, unkno
   let startAt = 0;
   while (true) {
     const data = await jiraGet(
-      `/rest/api/3/search?jql=${encodeURIComponent(jql)}&startAt=${startAt}&maxResults=${PAGE_SIZE}&fields=summary,status,issuetype,priority,assignee,reporter,labels,components,created,updated,resolutiondate,project`,
+      `/rest/api/3/search/jql?jql=${encodeURIComponent(jql)}&startAt=${startAt}&maxResults=${PAGE_SIZE}&fields=summary,status,issuetype,priority,assignee,reporter,labels,components,created,updated,resolutiondate,project`,
       env
     ) as { issues: Record<string, unknown>[]; total: number };
     issues.push(...data.issues);
@@ -37,7 +37,10 @@ export async function syncJira(sf: SnowflakeClient, env: Env): Promise<SyncResul
 
   try {
     const watermark = await sf.getWatermark(watermarkKey, env.ETL_KV);
-    const since = watermark ? ` AND updated >= "${watermark.slice(0, 10)}"` : '';
+    // On first run (no watermark) limit to last 90 days to stay under the 50-subrequest cap.
+    // Incremental runs use the watermark date so the issue set is always small.
+    const cutoff = watermark ?? new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const since = ` AND updated >= "${cutoff}"`;
     const issues = await searchIssues(`project in (LVL3, EDGE, RSA) ORDER BY updated ASC${since}`, env);
 
     const issueRows = issues.map(i => {
@@ -77,9 +80,12 @@ export async function syncJira(sf: SnowflakeClient, env: Env): Promise<SyncResul
     await sf.setWatermark(watermarkKey, now, env.ETL_KV);
     results.push({ source: 'jira', table: 'JIRA_ISSUES', upserted: n });
 
-    // Comments for updated issues
+    // Comments — skip on first run (no watermark) to avoid per-issue subrequest explosion.
     let commentCount = 0;
-    for (const issue of issues) {
+    if (!watermark) {
+      results.push({ source: 'jira', table: 'JIRA_COMMENTS', upserted: 0 });
+    }
+    for (const issue of watermark ? issues : []) {
       try {
         const data = await jiraGet(`/rest/api/3/issue/${issue.key}/comment?maxResults=100`, env) as { comments: Record<string, unknown>[] };
         const crows = data.comments.map(c => {

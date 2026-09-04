@@ -63,7 +63,18 @@ function outstandingStats(tickets, statusLabels) {
 
 function avgHours(deltas) {
   if (!deltas.length) return null;
-  return Math.round(deltas.reduce((a, b) => a + b, 0) / deltas.length / 36e5);
+  const h = deltas.reduce((a, b) => a + b, 0) / deltas.length / 36e5;
+  return Math.round(h * 10) / 10;
+}
+
+function medianHours(deltas) {
+  if (!deltas.length) return null;
+  const sorted = [...deltas].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  const h = sorted.length % 2 === 0
+    ? (sorted[mid - 1] + sorted[mid]) / 2
+    : sorted[mid];
+  return Math.round(h / 36e5 * 10) / 10;
 }
 
 // --- Sub-components ---
@@ -214,9 +225,9 @@ export default function FreshdeskDashboard() {
     }
 
     return {
-      avgFirstResponse: avgHours(firstRespDeltas),
-      avgEscalation:    avgHours(escalationDeltas),
-      avgResolution:    avgHours(resolvedDeltas),
+      avgFirstResponse: medianHours(firstRespDeltas),
+      avgEscalation:    medianHours(escalationDeltas),
+      avgResolution:    medianHours(resolvedDeltas),
     };
   }, [filtered, cats.l3edge, jiraByKey]);
 
@@ -422,17 +433,17 @@ export default function FreshdeskDashboard() {
       {/* ── KPI Row 2: Time Metrics ─────────────────────────── */}
       <div className="grid grid-cols-3 gap-4 mb-6">
         <KpiCard
-          title="Avg First Response"
+          title="Median First Response"
           value={fmtHours(timeMetrics.avgFirstResponse)}
           subtitle="from ticket creation"
         />
         <KpiCard
-          title="Avg Time to Escalation"
+          title="Median Time to Escalation"
           value={fmtHours(timeMetrics.avgEscalation)}
           subtitle="creation to Jira issue"
         />
         <KpiCard
-          title="Avg Time to Resolution"
+          title="Median Time to Resolution"
           value={fmtHours(timeMetrics.avgResolution)}
           subtitle="creation to resolved"
         />

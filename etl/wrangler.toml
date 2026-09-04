@@ -1,11 +1,10 @@
 name = "riskspan-dashboard-etl"
-account_id = "95c65ea66e1a33027efee8fcc220a91f"
 main = "src/index.ts"
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
 
 [triggers]
-crons = ["50 * * * *"]
+crons = ["0 * * * *"]
 
 [observability]
 enabled = true
@@ -13,7 +12,7 @@ head_sampling_rate = 1
 
 [[kv_namespaces]]
 binding = "ETL_KV"
-id = "df4095b0f93d41c288ca52831c2b1f17"
+id = "PLACEHOLDER_UPDATE_WITH_NEW_ACCOUNT_KV_ID"
 
 [vars]
 SNOWFLAKE_DATABASE = "RS_INTERNAL"

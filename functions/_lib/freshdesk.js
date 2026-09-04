@@ -41,7 +41,7 @@ async function freshdeskFetch(env, path, retriesLeft = 3) {
 // Capped at MAX_PAGES — recent/updated tickets sort first, so a cap just
 // means very old untouched tickets fall out of scope, which is fine for a
 // "current support load" view.
-const MAX_TICKET_PAGES = 20;
+const MAX_TICKET_PAGES = 50;
 
 async function fetchAllTickets(env) {
   const tickets = [];
@@ -84,17 +84,37 @@ export async function fetchTicketDetail(env, ticketId) {
   return { ticket, conversations };
 }
 
+async function fetchTicketFields(env) {
+  try {
+    const fields = await freshdeskFetch(env, '/ticket_fields');
+    const statusField = Array.isArray(fields) ? fields.find((f) => f.name === 'status') : null;
+    if (!statusField?.choices) return null;
+    const labels = {};
+    for (const [k, v] of Object.entries(statusField.choices)) {
+      const code = Number(k);
+      if (isNaN(code)) continue;
+      if (typeof v === 'string') labels[code] = v;
+      else if (Array.isArray(v) && typeof v[0] === 'string') labels[code] = v[0];
+    }
+    return Object.keys(labels).length > 0 ? labels : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchFreshdeskData(env) {
   assertConfigured(env);
 
-  const [ticketsResult, companiesResult] = await Promise.allSettled([
+  const [ticketsResult, companiesResult, fieldsResult] = await Promise.allSettled([
     fetchAllTickets(env),
     fetchAllCompanies(env),
+    fetchTicketFields(env),
   ]);
 
   const failures = [];
   const tickets = ticketsResult.status === 'fulfilled' ? ticketsResult.value : (failures.push('tickets'), []);
   const companies = companiesResult.status === 'fulfilled' ? companiesResult.value : (failures.push('companies'), []);
+  const statusLabels = fieldsResult.status === 'fulfilled' ? fieldsResult.value : null;
 
-  return { tickets, companies, failures };
+  return { tickets, companies, statusLabels, failures };
 }

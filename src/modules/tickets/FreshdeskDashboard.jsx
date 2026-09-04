@@ -15,20 +15,20 @@ const ADMIN_TYPES = new Set([
   'Create New User(s)', 'Server Issue', 'Problem - Server Issue',
 ]);
 
-const FD_STATUS_LABELS = {
+const DEFAULT_STATUS_LABELS = {
   2: 'Open', 3: 'Pending', 4: 'Resolved', 5: 'Closed',
   6: 'Working on Query', 7: 'Waiting on Customer', 10: 'Pending LVL3/EDGE',
 };
 
 const RANGE_OPTS = [
-  { key: '30', label: '1M' },
-  { key: '90', label: '3M' },
-  { key: '180', label: '6M' },
-  { key: '365', label: '1Y' },
+  { key: 'month',  label: 'This Month' },
+  { key: '3month', label: '3M' },
+  { key: '6month', label: '6M' },
+  { key: '1year',  label: '1Y' },
 ];
 
 const CAT_COLORS = { l3edge: '#8B5CF6', admin: '#FFA91D', substantive: '#0C8EA3' };
-const CAT_LABELS  = { l3edge: 'L3 + Edge', admin: 'Admin / Overhead', substantive: 'Substantive' };
+const CAT_LABELS  = { l3edge: 'L3 + Edge', admin: 'Admin / Overhead', substantive: 'Non-Escalated' };
 
 // --- Helpers ---
 function categorize(t) {
@@ -46,11 +46,11 @@ function pct(num, denom) {
   return denom ? Math.round((num / denom) * 100) : 0;
 }
 
-function outstandingStats(tickets) {
+function outstandingStats(tickets, statusLabels) {
   const open = tickets.filter(isOpen);
   const byStatus = {};
   for (const t of open) {
-    const label = FD_STATUS_LABELS[t.status] || `Status ${t.status}`;
+    const label = statusLabels[t.status] || `Status ${t.status}`;
     byStatus[label] = (byStatus[label] || 0) + 1;
   }
   return {
@@ -59,6 +59,11 @@ function outstandingStats(tickets) {
     openPct: pct(open.length, tickets.length),
     byStatus: Object.entries(byStatus).sort((a, b) => b[1] - a[1]),
   };
+}
+
+function avgHours(deltas) {
+  if (!deltas.length) return null;
+  return Math.round(deltas.reduce((a, b) => a + b, 0) / deltas.length / 36e5);
 }
 
 // --- Sub-components ---
@@ -97,24 +102,38 @@ export default function FreshdeskDashboard() {
   const fdQ   = useSalesforceQuery(fetchFreshdeskData);
   const jiraQ = useSalesforceQuery(fetchJiraData);
 
-  const [daysBack, setDaysBack]       = useState('30');
+  const [range, setRange]             = useState('month');
   const [customStart, setCustomStart] = useState('');
   const [customEnd,   setCustomEnd]   = useState('');
-  const [drill, setDrill]             = useState(null); // { tickets, title } or null
-  const [l3Sort,  setL3Sort]    = useState({ key: 'total', dir: 'desc' });
-  const [subSort, setSubSort]   = useState({ key: 'count', dir: 'desc' });
+  const [drill, setDrill]             = useState(null);
+  const [l3Sort,    setL3Sort]    = useState({ key: 'total', dir: 'desc' });
+  const [subSort,   setSubSort]   = useState({ key: 'count', dir: 'desc' });
+  const [adminSort, setAdminSort] = useState({ key: 'count', dir: 'desc' });
+  const [crossSort, setCrossSort] = useState({ key: 'total', dir: 'desc' });
 
-  const tickets      = fdQ.data?.tickets    ?? [];
-  const jiraIssues   = jiraQ.data?.issues   ?? [];
+  const tickets  = fdQ.data?.tickets   ?? [];
+  const jiraIssues = jiraQ.data?.issues ?? [];
+
+  const FD_STATUS_LABELS = useMemo(
+    () => fdQ.data?.statusLabels ?? DEFAULT_STATUS_LABELS,
+    [fdQ.data]
+  );
+
   const companiesById = useMemo(() => {
     const map = new Map();
     for (const c of fdQ.data?.companies ?? []) map.set(c.id, c.name);
     return map;
   }, [fdQ.data?.companies]);
 
-  // Date-range filter
+  const jiraByKey = useMemo(() => {
+    const map = new Map();
+    for (const issue of jiraIssues) if (issue.key) map.set(issue.key, issue);
+    return map;
+  }, [jiraIssues]);
+
+  // Calendar-based date filter
   const filtered = useMemo(() => {
-    if (daysBack === 'custom') {
+    if (range === 'custom') {
       const start = customStart ? new Date(customStart) : null;
       const end   = customEnd   ? new Date(customEnd + 'T23:59:59') : null;
       return tickets.filter((t) => {
@@ -125,10 +144,15 @@ export default function FreshdeskDashboard() {
         return true;
       });
     }
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - parseInt(daysBack, 10));
+    const now = new Date();
+    const y = now.getFullYear(), m = now.getMonth();
+    let cutoff;
+    if (range === 'month')       cutoff = new Date(y, m, 1);
+    else if (range === '3month') cutoff = new Date(y, m - 3, 1);
+    else if (range === '6month') cutoff = new Date(y, m - 6, 1);
+    else                         cutoff = new Date(y, m - 12, 1);
     return tickets.filter((t) => t.created_at && new Date(t.created_at) >= cutoff);
-  }, [tickets, daysBack, customStart, customEnd]);
+  }, [tickets, range, customStart, customEnd]);
 
   // Categorize
   const cats = useMemo(() => {
@@ -148,41 +172,80 @@ export default function FreshdeskDashboard() {
     const l3edgeResolved = cats.l3edge.filter(isResolved).length;
     const l3edgeOpen     = cats.l3edge.filter(isOpen).length;
     return {
-      total:          filtered.length,
-      openCount:      filtered.filter(isOpen).length,
-      l3edgeCount:    cats.l3edge.length,
-      l3edgePct:      pct(cats.l3edge.length, filtered.length),
-      l3edgeResPct:   pct(l3edgeResolved, cats.l3edge.length),
+      total:            filtered.length,
+      openCount:        filtered.filter(isOpen).length,
+      l3edgeCount:      cats.l3edge.length,
+      l3edgePct:        pct(cats.l3edge.length, filtered.length),
+      l3edgeResPct:     pct(l3edgeResolved, cats.l3edge.length),
       l3edgeResolved,
       l3edgeOpen,
-      adminCount:     cats.admin.length,
-      adminPct:       pct(cats.admin.length, filtered.length),
+      adminCount:       cats.admin.length,
+      adminPct:         pct(cats.admin.length, filtered.length),
+      substantiveCount: cats.substantive.length,
+      substantivePct:   pct(cats.substantive.length, filtered.length),
     };
   }, [filtered, cats]);
 
-  // Donut data — order matches the visual reference
+  // Time metrics
+  const timeMetrics = useMemo(() => {
+    const firstRespDeltas = filtered
+      .filter((t) => t.stats?.first_responded_at && t.created_at)
+      .map((t) => new Date(t.stats.first_responded_at) - new Date(t.created_at))
+      .filter((ms) => ms > 0);
+
+    const resolvedDeltas = filtered
+      .filter((t) => t.stats?.resolved_at && t.created_at && isResolved(t))
+      .map((t) => new Date(t.stats.resolved_at) - new Date(t.created_at))
+      .filter((ms) => ms > 0);
+
+    const escalationDeltas = [];
+    for (const t of cats.l3edge) {
+      const tags = t.tags || [];
+      for (const tag of tags) {
+        if (tag.startsWith('LVL3-') || tag.startsWith('EDGE-')) {
+          const issue = jiraByKey.get(tag);
+          if (issue?.created && t.created_at) {
+            const ms = new Date(issue.created) - new Date(t.created_at);
+            if (ms > 0) escalationDeltas.push(ms);
+          }
+          break;
+        }
+      }
+    }
+
+    return {
+      avgFirstResponse: avgHours(firstRespDeltas),
+      avgEscalation:    avgHours(escalationDeltas),
+      avgResolution:    avgHours(resolvedDeltas),
+    };
+  }, [filtered, cats.l3edge, jiraByKey]);
+
+  // Donut data
   const pieData = useMemo(() => [
-    { key: 'substantive', name: 'Substantive',     value: cats.substantive.length, color: CAT_COLORS.substantive },
+    { key: 'substantive', name: 'Non-Escalated',   value: cats.substantive.length, color: CAT_COLORS.substantive },
     { key: 'admin',       name: 'Admin / Overhead', value: cats.admin.length,       color: CAT_COLORS.admin },
     { key: 'l3edge',      name: 'L3 + Edge',        value: cats.l3edge.length,      color: CAT_COLORS.l3edge },
   ].filter((d) => d.value > 0), [cats]);
 
-  // Admin breakdown by type
+  // Admin by type (with resolved + open tracking)
   const adminByType = useMemo(() => {
     const map = new Map();
     for (const t of cats.admin) {
       const type = t.type || 'Other';
-      map.set(type, (map.get(type) || 0) + 1);
+      if (!map.has(type)) map.set(type, { type, count: 0, resolved: 0, open: 0 });
+      const e = map.get(type);
+      e.count++;
+      isResolved(t) ? e.resolved++ : e.open++;
     }
-    return [...map.entries()].sort((a, b) => b[1] - a[1]).map(([type, count]) => ({ type, count }));
+    return [...map.values()];
   }, [cats.admin]);
 
   // L3/Edge by type
   const l3edgeByType = useMemo(() => {
     const map = new Map();
     for (const t of cats.l3edge) {
-      const type    = t.type || 'Other';
-      const isEdge  = (t.tags || []).some((tag) => tag.startsWith('EDGE-'));
+      const type   = t.type || 'Other';
+      const isEdge = (t.tags || []).some((tag) => tag.startsWith('EDGE-'));
       if (!map.has(type)) map.set(type, { type, total: 0, lvl3: 0, edge: 0, open: 0, resolved: 0 });
       const e = map.get(type);
       e.total++;
@@ -205,15 +268,28 @@ export default function FreshdeskDashboard() {
     return [...map.values()];
   }, [cats.substantive]);
 
+  // Cross-category by type
+  const crossByType = useMemo(() => {
+    const map = new Map();
+    function add(ticket, cat) {
+      const type = ticket.type || 'Other';
+      if (!map.has(type)) map.set(type, { type, total: 0, l3edge: 0, substantive: 0, admin: 0 });
+      const e = map.get(type);
+      e.total++;
+      e[cat]++;
+    }
+    for (const t of cats.l3edge)      add(t, 'l3edge');
+    for (const t of cats.substantive) add(t, 'substantive');
+    for (const t of cats.admin)       add(t, 'admin');
+    return [...map.values()];
+  }, [cats]);
+
   // Outstanding stats per category
   const outstanding = useMemo(() => ({
-    l3edge:      outstandingStats(cats.l3edge),
-    admin:       outstandingStats(cats.admin),
-    substantive: outstandingStats(cats.substantive),
-  }), [cats]);
-
-  // All open tickets for the share bar
-  const allOpen = useMemo(() => filtered.filter(isOpen), [filtered]);
+    l3edge:      outstandingStats(cats.l3edge, FD_STATUS_LABELS),
+    admin:       outstandingStats(cats.admin, FD_STATUS_LABELS),
+    substantive: outstandingStats(cats.substantive, FD_STATUS_LABELS),
+  }), [cats, FD_STATUS_LABELS]);
 
   // Sorted tables
   function sortRows(rows, key, dir) {
@@ -230,15 +306,21 @@ export default function FreshdeskDashboard() {
   function toggleSubSort(key) {
     setSubSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }));
   }
+  function toggleAdminSort(key) {
+    setAdminSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }));
+  }
+  function toggleCrossSort(key) {
+    setCrossSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }));
+  }
 
-  const sortedL3  = useMemo(() => sortRows(l3edgeByType,    l3Sort.key,  l3Sort.dir),  [l3edgeByType,    l3Sort]);
-  const sortedSub = useMemo(() => sortRows(substantiveByType, subSort.key, subSort.dir), [substantiveByType, subSort]);
+  const sortedL3    = useMemo(() => sortRows(l3edgeByType,     l3Sort.key,    l3Sort.dir),    [l3edgeByType,     l3Sort]);
+  const sortedSub   = useMemo(() => sortRows(substantiveByType, subSort.key,   subSort.dir),   [substantiveByType, subSort]);
+  const sortedAdmin = useMemo(() => sortRows(adminByType,       adminSort.key, adminSort.dir), [adminByType,       adminSort]);
+  const sortedCross = useMemo(() => sortRows(crossByType,       crossSort.key, crossSort.dir), [crossByType,       crossSort]);
 
-  const rangeLabel = daysBack === 'custom'
-    ? (customStart || customEnd
-        ? `${customStart || '…'} – ${customEnd || '…'}`
-        : 'Custom range')
-    : (RANGE_OPTS.find((o) => o.key === daysBack)?.label ?? '1M');
+  const rangeLabel = range === 'custom'
+    ? (customStart || customEnd ? `${customStart || '…'} – ${customEnd || '…'}` : 'Custom range')
+    : (RANGE_OPTS.find((o) => o.key === range)?.label ?? 'This Month');
 
   if (fdQ.loading) {
     return <div className="flex items-center justify-center py-20"><LoadingSpinner size="lg" /></div>;
@@ -246,6 +328,8 @@ export default function FreshdeskDashboard() {
   if (fdQ.error) {
     return <ErrorState message={fdQ.error} onRetry={triggerRefresh} />;
   }
+
+  const fmtHours = (h) => h != null ? `${h}h` : '—';
 
   return (
     <div>
@@ -260,9 +344,9 @@ export default function FreshdeskDashboard() {
             {RANGE_OPTS.map((opt) => (
               <button
                 key={opt.key}
-                onClick={() => setDaysBack(opt.key)}
+                onClick={() => setRange(opt.key)}
                 className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
-                  daysBack === opt.key
+                  range === opt.key
                     ? 'bg-white text-rs-teal shadow-sm border border-rs-border'
                     : 'text-rs-muted hover:text-rs-text'
                 }`}
@@ -271,9 +355,9 @@ export default function FreshdeskDashboard() {
               </button>
             ))}
             <button
-              onClick={() => setDaysBack('custom')}
+              onClick={() => setRange('custom')}
               className={`px-3 py-1 text-xs font-semibold rounded-md transition-colors ${
-                daysBack === 'custom'
+                range === 'custom'
                   ? 'bg-white text-rs-teal shadow-sm border border-rs-border'
                   : 'text-rs-muted hover:text-rs-text'
               }`}
@@ -281,7 +365,7 @@ export default function FreshdeskDashboard() {
               Custom
             </button>
           </div>
-          {daysBack === 'custom' && (
+          {range === 'custom' && (
             <div className="flex items-center gap-2">
               <input
                 type="date"
@@ -301,12 +385,12 @@ export default function FreshdeskDashboard() {
         </div>
       </div>
 
-      {/* ── KPI Strip ──────────────────────────────────────── */}
-      <div className="grid grid-cols-5 gap-4 mb-6">
+      {/* ── KPI Row 1: Counts ──────────────────────────────── */}
+      <div className="grid grid-cols-5 gap-4 mb-3">
         <KpiCard
           title="Total Tickets"
           value={kpis.total}
-          subtitle={`Last ${rangeLabel}`}
+          subtitle={rangeLabel}
           onClick={() => setDrill({ tickets: filtered, title: 'All Tickets' })}
         />
         <KpiCard
@@ -316,27 +400,46 @@ export default function FreshdeskDashboard() {
           onClick={() => setDrill({ tickets: filtered.filter(isOpen), title: 'Open Tickets' })}
         />
         <KpiCard
-          title="L3 + Edge"
-          value={kpis.l3edgeCount}
-          subtitle={`${kpis.l3edgePct}% of total`}
-          onClick={() => setDrill({ tickets: cats.l3edge, title: 'L3 + Edge Tickets' })}
-        />
-        <KpiCard
-          title="L3 / Edge Resolved"
-          value={`${kpis.l3edgeResPct}%`}
-          subtitle={`${kpis.l3edgeResolved} closed · ${kpis.l3edgeOpen} open`}
-          onClick={() => setDrill({ tickets: cats.l3edge.filter(isResolved), title: 'L3 / Edge — Resolved' })}
-        />
-        <KpiCard
           title="Admin / Overhead"
           value={kpis.adminCount}
           subtitle={`${kpis.adminPct}% of total`}
           onClick={() => setDrill({ tickets: cats.admin, title: 'Admin / Overhead Tickets' })}
         />
+        <KpiCard
+          title="Non-Escalated"
+          value={kpis.substantiveCount}
+          subtitle={`${kpis.substantivePct}% of total`}
+          onClick={() => setDrill({ tickets: cats.substantive, title: 'Non-Escalated Tickets' })}
+        />
+        <KpiCard
+          title="L3 + Edge"
+          value={kpis.l3edgeCount}
+          subtitle={`${kpis.l3edgePct}% of total`}
+          onClick={() => setDrill({ tickets: cats.l3edge, title: 'L3 + Edge Tickets' })}
+        />
       </div>
 
-      {/* ── Row 1: Donut | Admin Breakdown | L3/Edge Detail ── */}
-      <div className="grid grid-cols-3 gap-4 mb-4">
+      {/* ── KPI Row 2: Time Metrics ─────────────────────────── */}
+      <div className="grid grid-cols-3 gap-4 mb-6">
+        <KpiCard
+          title="Avg First Response"
+          value={fmtHours(timeMetrics.avgFirstResponse)}
+          subtitle="from ticket creation"
+        />
+        <KpiCard
+          title="Avg Time to Escalation"
+          value={fmtHours(timeMetrics.avgEscalation)}
+          subtitle="creation to Jira issue"
+        />
+        <KpiCard
+          title="Avg Time to Resolution"
+          value={fmtHours(timeMetrics.avgResolution)}
+          subtitle="creation to resolved"
+        />
+      </div>
+
+      {/* ── Row 1: Donut | L3/Edge Detail ──────────────────── */}
+      <div className="grid grid-cols-2 gap-4 mb-4">
 
         {/* Category donut */}
         <div className="rounded-xl border border-rs-border bg-white overflow-hidden">
@@ -372,6 +475,7 @@ export default function FreshdeskDashboard() {
                 <button
                   key={d.key}
                   onClick={() => setDrill({ tickets: cats[d.key], title: CAT_LABELS[d.key] })}
+                  title="Click to drill down"
                   className="flex items-center justify-between w-full text-xs hover:bg-rs-surface rounded px-1 py-0.5 transition-colors"
                 >
                   <div className="flex items-center gap-1.5">
@@ -382,38 +486,6 @@ export default function FreshdeskDashboard() {
                 </button>
               ))}
             </div>
-          </div>
-        </div>
-
-        {/* Admin/Overhead breakdown */}
-        <div className="rounded-xl border border-rs-border bg-white overflow-hidden">
-          <div className="px-4 py-3 border-b border-rs-border">
-            <h3 className="text-xs font-semibold text-rs-text uppercase tracking-wide">
-              Admin / Overhead Breakdown
-              <span className="ml-2 font-normal text-rs-muted normal-case">— {kpis.adminCount} tickets ({kpis.adminPct}%)</span>
-            </h3>
-          </div>
-          <div className="p-4 space-y-3">
-            {adminByType.length === 0 ? (
-              <p className="text-xs text-rs-muted">No admin tickets in this period.</p>
-            ) : adminByType.map(({ type, count }) => (
-              <button
-                key={type}
-                onClick={() => setDrill({
-                  tickets: cats.admin.filter((t) => (t.type || 'Other') === type),
-                  title: `Admin: ${type}`,
-                })}
-                className="w-full text-left group"
-              >
-                <div className="flex items-center justify-between text-xs mb-1">
-                  <span className="text-rs-text font-medium group-hover:text-rs-teal transition-colors">{type}</span>
-                  <span className="text-rs-muted tabular-nums">{count} · {pct(count, kpis.adminCount)}%</span>
-                </div>
-                <div className="w-full h-1.5 rounded-full bg-rs-surface overflow-hidden">
-                  <div className="h-full rounded-full bg-amber-400" style={{ width: `${pct(count, kpis.adminCount)}%` }} />
-                </div>
-              </button>
-            ))}
           </div>
         </div>
 
@@ -435,6 +507,7 @@ export default function FreshdeskDashboard() {
                   {cats.l3.length > 0 && (
                     <button
                       onClick={() => setDrill({ tickets: cats.l3, title: 'LVL3 Tickets' })}
+                      title="Click to drill down"
                       className="flex items-center justify-center text-[9px] font-bold text-white bg-purple-500 hover:bg-purple-600 transition-colors"
                       style={{ width: `${pct(cats.l3.length, kpis.l3edgeCount)}%` }}
                     >
@@ -444,6 +517,7 @@ export default function FreshdeskDashboard() {
                   {cats.edge.length > 0 && (
                     <button
                       onClick={() => setDrill({ tickets: cats.edge, title: 'Edge Tickets' })}
+                      title="Click to drill down"
                       className="flex-1 flex items-center justify-center text-[9px] font-bold text-white bg-violet-400 hover:bg-violet-500 transition-colors"
                     >
                       Edge · {cats.edge.length}
@@ -467,6 +541,7 @@ export default function FreshdeskDashboard() {
                   {kpis.l3edgeResolved > 0 && (
                     <button
                       onClick={() => setDrill({ tickets: cats.l3edge.filter(isResolved), title: 'L3 / Edge — Resolved' })}
+                      title="Click to drill down"
                       className="flex items-center justify-center text-[9px] font-bold text-white bg-green-500 hover:bg-green-600 transition-colors"
                       style={{ width: `${kpis.l3edgeResPct}%` }}
                     >
@@ -476,6 +551,7 @@ export default function FreshdeskDashboard() {
                   {kpis.l3edgeOpen > 0 && (
                     <button
                       onClick={() => setDrill({ tickets: cats.l3edge.filter(isOpen), title: 'L3 / Edge — Open' })}
+                      title="Click to drill down"
                       className="flex-1 flex items-center justify-center text-[9px] font-bold text-white bg-red-400 hover:bg-red-500 transition-colors"
                     >
                       Open · {kpis.l3edgeOpen}
@@ -493,25 +569,25 @@ export default function FreshdeskDashboard() {
         </div>
       </div>
 
-      {/* ── Row 2: Outstanding by Category ─────────────────── */}
+      {/* ── Row 2: Open Tickets — Outstanding by Category ──── */}
       <div className="rounded-xl border border-rs-border bg-white overflow-hidden mb-4">
         <div className="px-4 py-3 border-b border-rs-border">
           <h3 className="text-xs font-semibold text-rs-text uppercase tracking-wide">
-            Outstanding by Category · {rangeLabel}
+            Open Tickets — Outstanding by Category · {rangeLabel}
           </h3>
         </div>
         <div className="grid grid-cols-3 divide-x divide-rs-border">
           {[
             { key: 'l3edge',      label: 'L3 & Edge',         tickets: cats.l3edge,      color: CAT_COLORS.l3edge      },
             { key: 'admin',       label: 'Admin / Overhead',   tickets: cats.admin,        color: CAT_COLORS.admin       },
-            { key: 'substantive', label: 'Substantive',        tickets: cats.substantive,  color: CAT_COLORS.substantive },
+            { key: 'substantive', label: 'Non-Escalated',      tickets: cats.substantive,  color: CAT_COLORS.substantive },
           ].map(({ key, label, tickets: catTickets, color }) => {
             const stats = outstanding[key];
             return (
               <div key={key} className="p-4">
                 <div className="flex items-center justify-between mb-2">
                   <p className="text-xs font-semibold text-rs-text">{label}</p>
-                  <p className="text-xs text-rs-muted">{stats.openCount} / {stats.total}</p>
+                  <p className="text-xs text-rs-muted">{stats.openCount} open / {stats.total} total</p>
                 </div>
                 <p className="text-3xl font-bold mb-2" style={{ color }}>{stats.openPct}%</p>
                 <div className="w-full h-1.5 rounded-full bg-rs-surface overflow-hidden mb-3">
@@ -527,6 +603,7 @@ export default function FreshdeskDashboard() {
                         ),
                         title: `${label} — ${statusLabel}`,
                       })}
+                      title="Click to drill down"
                       className="flex items-center justify-between w-full text-[10px] hover:bg-rs-surface rounded px-0.5 py-0.5 transition-colors"
                     >
                       <span className="text-rs-text">{statusLabel}</span>
@@ -543,48 +620,7 @@ export default function FreshdeskDashboard() {
         </div>
       </div>
 
-      {/* ── Row 3: Outstanding share bar ───────────────────── */}
-      {allOpen.length > 0 && (() => {
-        const segments = [
-          { key: 'l3edge',      label: 'L3/Edge',      openTickets: cats.l3edge.filter(isOpen) },
-          { key: 'substantive', label: 'Substantive',   openTickets: cats.substantive.filter(isOpen) },
-          { key: 'admin',       label: 'Admin',         openTickets: cats.admin.filter(isOpen) },
-        ].filter((s) => s.openTickets.length > 0);
-
-        return (
-          <div className="rounded-xl border border-rs-border bg-white px-4 py-4 mb-6">
-            <p className="text-[10px] font-semibold text-rs-muted uppercase tracking-wide mb-2">
-              Outstanding share — {allOpen.length} open tickets
-            </p>
-            <div className="flex h-6 rounded overflow-hidden gap-px">
-              {segments.map(({ key, label, openTickets }) => {
-                const p = pct(openTickets.length, allOpen.length);
-                return (
-                  <button
-                    key={key}
-                    onClick={() => setDrill({ tickets: openTickets, title: `Open — ${CAT_LABELS[key]}` })}
-                    className="flex items-center justify-center text-[9px] font-bold text-white hover:opacity-90 transition-opacity"
-                    style={{ width: `${p}%`, backgroundColor: CAT_COLORS[key] }}
-                    title={`${label}: ${openTickets.length} (${p}%)`}
-                  >
-                    {p > 12 && `${label} ${p}%`}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex gap-4 mt-2 text-[10px] text-rs-muted">
-              {segments.map(({ key, label, openTickets }) => (
-                <span key={key} className="flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: CAT_COLORS[key] }} />
-                  {label}: {openTickets.length} ({pct(openTickets.length, allOpen.length)}%)
-                </span>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Row 4: L3/Edge by Type table ───────────────────── */}
+      {/* ── L3/Edge by Type table ───────────────────────────── */}
       {l3edgeByType.length > 0 && (
         <div className="rounded-xl border border-rs-border bg-white overflow-hidden mb-6">
           <div className="px-4 py-3 border-b border-rs-border">
@@ -615,6 +651,7 @@ export default function FreshdeskDashboard() {
                       tickets: cats.l3edge.filter((t) => (t.type || 'Other') === row.type),
                       title: `L3 / Edge: ${row.type}`,
                     })}
+                    title="Click to drill down"
                     className="border-b border-rs-border hover:bg-rs-surface cursor-pointer transition-colors"
                   >
                     <td className="px-3 py-2.5 font-medium text-rs-text">{row.type}</td>
@@ -656,23 +693,31 @@ export default function FreshdeskDashboard() {
         </div>
       )}
 
-      {/* ── Row 5: Substantive by Type table ───────────────── */}
+      {/* ── Non-Escalated by Type table ─────────────────────── */}
       {substantiveByType.length > 0 && (
         <div className="rounded-xl border border-rs-border bg-white overflow-hidden mb-6">
           <div className="px-4 py-3 border-b border-rs-border">
             <h3 className="text-xs font-semibold text-rs-text uppercase tracking-wide">
-              Substantive Ticket Types
+              Non-Escalated Ticket Types
               <span className="ml-2 font-normal text-rs-muted normal-case">— {cats.substantive.length} tickets (admin & escalations excluded)</span>
             </h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-xs border-collapse">
+            <table className="w-full text-xs border-collapse" style={{ tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '38%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '24%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '8%' }} />
+              </colgroup>
               <thead>
                 <tr className="bg-rs-teal">
                   <SortTh label="Ticket Type"   sortKey="type"     active={subSort.key === 'type'}     dir={subSort.dir} onSort={toggleSubSort} />
                   <SortTh label="Count"         sortKey="count"    active={subSort.key === 'count'}    dir={subSort.dir} onSort={toggleSubSort} />
-                  <StaticTh label={`% of ${filtered.length}`} />
-                  <StaticTh label="Resolution Rate" className="w-36" />
+                  <StaticTh label="% Share" />
+                  <StaticTh label="Resolution Rate" />
                   <SortTh label="Resolved"      sortKey="resolved" active={subSort.key === 'resolved'} dir={subSort.dir} onSort={toggleSubSort} />
                   <SortTh label="Open"          sortKey="open"     active={subSort.key === 'open'}     dir={subSort.dir} onSort={toggleSubSort} />
                 </tr>
@@ -683,13 +728,14 @@ export default function FreshdeskDashboard() {
                     key={row.type}
                     onClick={() => setDrill({
                       tickets: cats.substantive.filter((t) => (t.type || 'Other') === row.type),
-                      title: `Substantive: ${row.type}`,
+                      title: `Non-Escalated: ${row.type}`,
                     })}
+                    title="Click to drill down"
                     className="border-b border-rs-border hover:bg-rs-surface cursor-pointer transition-colors"
                   >
                     <td className="px-3 py-2.5 font-medium text-rs-text">{row.type}</td>
                     <td className="px-3 py-2.5 text-rs-text">{row.count}</td>
-                    <td className="px-3 py-2.5 text-rs-muted">{pct(row.count, filtered.length)}%</td>
+                    <td className="px-3 py-2.5 text-rs-muted">{pct(row.count, cats.substantive.length)}%</td>
                     <td className="px-3 py-2.5"><ResolutionBar resolved={row.resolved} total={row.count} /></td>
                     <td className="px-3 py-2.5 text-rs-text">{row.resolved} / {row.count}</td>
                     <td className="px-3 py-2.5 text-rs-text">{row.open}</td>
@@ -698,10 +744,129 @@ export default function FreshdeskDashboard() {
                 <tr className="border-t-2 border-rs-border bg-rs-surface font-semibold">
                   <td className="px-3 py-2 text-rs-text">TOTAL</td>
                   <td className="px-3 py-2 text-rs-text">{cats.substantive.length}</td>
-                  <td className="px-3 py-2 text-rs-muted">{pct(cats.substantive.length, filtered.length)}%</td>
+                  <td className="px-3 py-2 text-rs-muted">100%</td>
                   <td className="px-3 py-2"><ResolutionBar resolved={cats.substantive.filter(isResolved).length} total={cats.substantive.length} /></td>
                   <td className="px-3 py-2 text-rs-text">{cats.substantive.filter(isResolved).length} / {cats.substantive.length}</td>
                   <td className="px-3 py-2 text-rs-text">{outstanding.substantive.openCount}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Admin by Type table ─────────────────────────────── */}
+      {adminByType.length > 0 && (
+        <div className="rounded-xl border border-rs-border bg-white overflow-hidden mb-6">
+          <div className="px-4 py-3 border-b border-rs-border">
+            <h3 className="text-xs font-semibold text-rs-text uppercase tracking-wide">
+              Admin / Overhead Ticket Types
+              <span className="ml-2 font-normal text-rs-muted normal-case">— {kpis.adminCount} tickets</span>
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse" style={{ tableLayout: 'fixed' }}>
+              <colgroup>
+                <col style={{ width: '38%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '8%' }} />
+                <col style={{ width: '24%' }} />
+                <col style={{ width: '14%' }} />
+                <col style={{ width: '8%' }} />
+              </colgroup>
+              <thead>
+                <tr className="bg-rs-teal">
+                  <SortTh label="Ticket Type"   sortKey="type"     active={adminSort.key === 'type'}     dir={adminSort.dir} onSort={toggleAdminSort} />
+                  <SortTh label="Count"         sortKey="count"    active={adminSort.key === 'count'}    dir={adminSort.dir} onSort={toggleAdminSort} />
+                  <StaticTh label="% Share" />
+                  <StaticTh label="Resolution Rate" />
+                  <SortTh label="Resolved"      sortKey="resolved" active={adminSort.key === 'resolved'} dir={adminSort.dir} onSort={toggleAdminSort} />
+                  <SortTh label="Open"          sortKey="open"     active={adminSort.key === 'open'}     dir={adminSort.dir} onSort={toggleAdminSort} />
+                </tr>
+              </thead>
+              <tbody>
+                {sortedAdmin.map((row) => (
+                  <tr
+                    key={row.type}
+                    onClick={() => setDrill({
+                      tickets: cats.admin.filter((t) => (t.type || 'Other') === row.type),
+                      title: `Admin: ${row.type}`,
+                    })}
+                    title="Click to drill down"
+                    className="border-b border-rs-border hover:bg-rs-surface cursor-pointer transition-colors"
+                  >
+                    <td className="px-3 py-2.5 font-medium text-rs-text">{row.type}</td>
+                    <td className="px-3 py-2.5 text-rs-text">{row.count}</td>
+                    <td className="px-3 py-2.5 text-rs-muted">{pct(row.count, kpis.adminCount)}%</td>
+                    <td className="px-3 py-2.5"><ResolutionBar resolved={row.resolved} total={row.count} /></td>
+                    <td className="px-3 py-2.5 text-rs-text">{row.resolved} / {row.count}</td>
+                    <td className="px-3 py-2.5 text-rs-text">{row.open}</td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-rs-border bg-rs-surface font-semibold">
+                  <td className="px-3 py-2 text-rs-text">TOTAL</td>
+                  <td className="px-3 py-2 text-rs-text">{kpis.adminCount}</td>
+                  <td className="px-3 py-2 text-rs-muted">100%</td>
+                  <td className="px-3 py-2"><ResolutionBar resolved={cats.admin.filter(isResolved).length} total={kpis.adminCount} /></td>
+                  <td className="px-3 py-2 text-rs-text">{cats.admin.filter(isResolved).length} / {kpis.adminCount}</td>
+                  <td className="px-3 py-2 text-rs-text">{outstanding.admin.openCount}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Cross-Category by Type ─────────────────────────── */}
+      {crossByType.length > 0 && (
+        <div className="rounded-xl border border-rs-border bg-white overflow-hidden mb-6">
+          <div className="px-4 py-3 border-b border-rs-border">
+            <h3 className="text-xs font-semibold text-rs-text uppercase tracking-wide">
+              All Types — Cross-Category
+              <span className="ml-2 font-normal text-rs-muted normal-case">— one row per type across L3+Edge, Non-Escalated, and Admin</span>
+            </h3>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs border-collapse">
+              <thead>
+                <tr className="bg-rs-teal">
+                  <SortTh label="Ticket Type"   sortKey="type"        active={crossSort.key === 'type'}        dir={crossSort.dir} onSort={toggleCrossSort} />
+                  <SortTh label="Total"         sortKey="total"       active={crossSort.key === 'total'}       dir={crossSort.dir} onSort={toggleCrossSort} />
+                  <SortTh label="L3 + Edge"     sortKey="l3edge"      active={crossSort.key === 'l3edge'}      dir={crossSort.dir} onSort={toggleCrossSort} />
+                  <SortTh label="Non-Escalated" sortKey="substantive" active={crossSort.key === 'substantive'} dir={crossSort.dir} onSort={toggleCrossSort} />
+                  <SortTh label="Admin"         sortKey="admin"       active={crossSort.key === 'admin'}       dir={crossSort.dir} onSort={toggleCrossSort} />
+                </tr>
+              </thead>
+              <tbody>
+                {sortedCross.map((row) => (
+                  <tr
+                    key={row.type}
+                    onClick={() => setDrill({
+                      tickets: filtered.filter((t) => (t.type || 'Other') === row.type),
+                      title: `Type: ${row.type}`,
+                    })}
+                    title="Click to drill down"
+                    className="border-b border-rs-border hover:bg-rs-surface cursor-pointer transition-colors"
+                  >
+                    <td className="px-3 py-2.5 font-medium text-rs-text">{row.type}</td>
+                    <td className="px-3 py-2.5 text-rs-text font-medium">{row.total}</td>
+                    <td className="px-3 py-2.5 text-rs-text">
+                      {row.l3edge > 0 ? row.l3edge : <span className="text-rs-muted">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-rs-text">
+                      {row.substantive > 0 ? row.substantive : <span className="text-rs-muted">—</span>}
+                    </td>
+                    <td className="px-3 py-2.5 text-rs-text">
+                      {row.admin > 0 ? row.admin : <span className="text-rs-muted">—</span>}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="border-t-2 border-rs-border bg-rs-surface font-semibold">
+                  <td className="px-3 py-2 text-rs-text">TOTAL</td>
+                  <td className="px-3 py-2 text-rs-text">{filtered.length}</td>
+                  <td className="px-3 py-2 text-rs-text">{kpis.l3edgeCount}</td>
+                  <td className="px-3 py-2 text-rs-text">{kpis.substantiveCount}</td>
+                  <td className="px-3 py-2 text-rs-text">{kpis.adminCount}</td>
                 </tr>
               </tbody>
             </table>
@@ -716,6 +881,7 @@ export default function FreshdeskDashboard() {
           title={drill.title}
           jiraIssues={jiraIssues}
           companiesById={companiesById}
+          statusLabels={FD_STATUS_LABELS}
           onClose={() => setDrill(null)}
         />
       )}

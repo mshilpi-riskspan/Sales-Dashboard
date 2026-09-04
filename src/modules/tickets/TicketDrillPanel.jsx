@@ -4,7 +4,7 @@ import SlidePanel from '../../components/common/SlidePanel';
 import { TicketDetailPanel } from '../accounts/TicketPanels';
 import { JiraDetailPanel } from '../accounts/JiraPanels';
 
-const FD_STATUS_LABELS = {
+const DEFAULT_STATUS_LABELS = {
   2: 'Open', 3: 'Pending', 4: 'Resolved', 5: 'Closed',
   6: 'Working on Query', 7: 'Waiting on Customer', 10: 'Pending LVL3/EDGE',
 };
@@ -20,7 +20,8 @@ const FD_STATUS_COLORS = {
 
 const JIRA_KEY_RE = /^(LVL3|EDGE|RSA)-\d+$/;
 
-export default function TicketDrillPanel({ tickets, title, jiraIssues = [], companiesById = new Map(), onClose }) {
+export default function TicketDrillPanel({ tickets, title, jiraIssues = [], companiesById = new Map(), statusLabels, onClose }) {
+  const FD_STATUS_LABELS = statusLabels ?? DEFAULT_STATUS_LABELS;
   const [activeTicket, setActiveTicket] = useState(null);
   const [activeJira, setActiveJira] = useState(null);
 

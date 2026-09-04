@@ -3,7 +3,6 @@ import {
   PencilIcon, CheckIcon, XMarkIcon, ArrowPathIcon, MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 import { fetchAllAccounts } from '../../datasources/salesforce';
-import { useDashboard } from '../../context/DashboardContext';
 import LoadingSpinner from '../../components/common/LoadingSpinner';
 import ErrorState from '../../components/common/ErrorState';
 
@@ -32,10 +31,7 @@ function NullBadge() {
 function SfDropdown({ value, display, accounts, onSave, onCancel }) {
   const [search, setSearch] = useState('');
   const inputRef = useRef(null);
-
-  useEffect(() => {
-    inputRef.current?.focus();
-  }, []);
+  useEffect(() => { inputRef.current?.focus(); }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -90,9 +86,7 @@ function TextFieldEdit({ label, fieldName, initialValue, onSave, onCancel, numer
 
   function handleSave() {
     const trimmed = val.trim();
-    if (numeric && trimmed !== '' && isNaN(Number(trimmed))) {
-      return;
-    }
+    if (numeric && trimmed !== '' && isNaN(Number(trimmed))) return;
     onSave(fieldName, trimmed === '' ? null : trimmed);
   }
 
@@ -130,16 +124,17 @@ function EditPanel({ row, sfAccounts, onSave, onCancel, saving, error }) {
   const [activeField, setActiveField] = useState(null);
 
   const fields = [
-    { key: 'SF_ACCOUNT_ID', label: 'Salesforce Account', display: row.SF_ACCOUNT_NAME, value: row.SF_ACCOUNT_ID, type: 'sf' },
-    { key: 'FD_COMPANY_ID', label: 'Freshdesk Company ID', display: row.FD_COMPANY_NAME, value: row.FD_COMPANY_ID, type: 'number' },
-    { key: 'MAXIO_CUSTOMER_ID', label: 'Maxio Customer ID', display: row.MAXIO_CUSTOMER_NAME, value: row.MAXIO_CUSTOMER_ID, type: 'number' },
-    { key: 'SNOWFLAKE_CLIENT_IDENTIFIER', label: 'Snowflake Identifier', value: row.SNOWFLAKE_CLIENT_IDENTIFIER, type: 'text' },
-    { key: 'INNOVATION_CLIENT_ID', label: 'Innovation Client ID', value: row.INNOVATION_CLIENT_ID, type: 'text' },
+    { key: 'SF_ACCOUNT_ID',          label: 'Salesforce',  display: row.SF_ACCOUNT_NAME,    value: row.SF_ACCOUNT_ID,          type: 'sf'     },
+    { key: 'FD_COMPANY_ID',          label: 'Freshdesk',   display: row.FD_COMPANY_NAME,    value: row.FD_COMPANY_ID,          type: 'number' },
+    { key: 'MAXIO_CUSTOMER_ID',      label: 'Maxio',       display: row.MAXIO_CUSTOMER_NAME, value: row.MAXIO_CUSTOMER_ID,     type: 'number' },
+    { key: 'ASTRONOMER_TAG',         label: 'Astronomer',  value: row.ASTRONOMER_TAG,        type: 'text'   },
+    { key: 'JIRA_LABEL',             label: 'Jira',        value: row.JIRA_LABEL,            type: 'text'   },
+    { key: 'SNOWFLAKE_CLIENT_IDENTIFIER', label: 'Snowflake', value: row.SNOWFLAKE_CLIENT_IDENTIFIER, type: 'text' },
   ];
 
   return (
     <tr className="bg-rs-surface border-b border-rs-border">
-      <td colSpan={7} className="px-4 py-3">
+      <td colSpan={8} className="px-4 py-3">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs font-semibold text-rs-text">Edit mappings for "{row.NAME}"</span>
           <button onClick={onCancel} className="text-rs-muted hover:text-rs-text">
@@ -202,39 +197,45 @@ function EditPanel({ row, sfAccounts, onSave, onCancel, saving, error }) {
 }
 
 function MappingRow({ row, sfAccounts, editingId, onEditStart, onEditCancel, onSave, saving, saveError }) {
-  const missingCount = [row.SF_ACCOUNT_ID, row.FD_COMPANY_ID, row.MAXIO_CUSTOMER_ID].filter((v) => v == null).length;
+  const sourceValues = [row.SF_ACCOUNT_ID, row.FD_COMPANY_ID, row.MAXIO_CUSTOMER_ID, row.ASTRONOMER_TAG, row.JIRA_LABEL, row.SNOWFLAKE_CLIENT_IDENTIFIER];
+  const missingCount = sourceValues.filter((v) => v == null).length;
 
   return (
     <>
       <tr className="border-b border-rs-border hover:bg-rs-surface transition-colors">
+        {/* Company name */}
         <td className="px-3 py-2 text-sm font-medium text-rs-text whitespace-nowrap max-w-[180px] truncate" title={row.NAME}>
           {row.NAME || <span className="text-rs-muted italic">Unnamed</span>}
         </td>
-        <td className="px-3 py-2 text-xs text-rs-text whitespace-nowrap">
-          {row.SF_ACCOUNT_NAME
-            ? <span>{row.SF_ACCOUNT_NAME}</span>
+        {/* Salesforce */}
+        <td className="px-3 py-2 text-xs text-rs-text whitespace-nowrap max-w-[140px] truncate" title={row.SF_ACCOUNT_NAME}>
+          {row.SF_ACCOUNT_NAME ?? (row.SF_ACCOUNT_ID ? <span className="font-mono text-rs-muted">{row.SF_ACCOUNT_ID}</span> : <NullBadge />)}
+        </td>
+        {/* Maxio */}
+        <td className="px-3 py-2 text-xs text-rs-muted whitespace-nowrap">
+          {row.MAXIO_CUSTOMER_ID != null
+            ? (row.MAXIO_CUSTOMER_NAME ? row.MAXIO_CUSTOMER_NAME : <span className="font-mono">#{row.MAXIO_CUSTOMER_ID}</span>)
             : <NullBadge />}
         </td>
-        <td className="px-3 py-2 text-xs text-rs-text whitespace-nowrap">
-          {row.FD_COMPANY_NAME
-            ? <span>{row.FD_COMPANY_NAME}</span>
-            : row.FD_COMPANY_ID != null
-              ? <span className="text-rs-muted">#{row.FD_COMPANY_ID}</span>
-              : <NullBadge />}
+        {/* Astronomer */}
+        <td className="px-3 py-2 text-xs text-rs-muted font-mono whitespace-nowrap max-w-[120px] truncate" title={row.ASTRONOMER_TAG}>
+          {row.ASTRONOMER_TAG ?? <NullBadge />}
         </td>
-        <td className="px-3 py-2 text-xs text-rs-text whitespace-nowrap">
-          {row.MAXIO_CUSTOMER_NAME
-            ? <span>{row.MAXIO_CUSTOMER_NAME}</span>
-            : row.MAXIO_CUSTOMER_ID != null
-              ? <span className="text-rs-muted">#{row.MAXIO_CUSTOMER_ID}</span>
-              : <NullBadge />}
+        {/* Jira */}
+        <td className="px-3 py-2 text-xs text-rs-muted font-mono whitespace-nowrap max-w-[120px] truncate" title={row.JIRA_LABEL}>
+          {row.JIRA_LABEL ?? <NullBadge />}
         </td>
-        <td className="px-3 py-2 text-xs text-rs-muted whitespace-nowrap max-w-[140px] truncate" title={row.SNOWFLAKE_CLIENT_IDENTIFIER}>
+        {/* Freshdesk */}
+        <td className="px-3 py-2 text-xs text-rs-muted whitespace-nowrap">
+          {row.FD_COMPANY_ID != null
+            ? (row.FD_COMPANY_NAME ? row.FD_COMPANY_NAME : <span className="font-mono">#{row.FD_COMPANY_ID}</span>)
+            : <NullBadge />}
+        </td>
+        {/* Snowflake */}
+        <td className="px-3 py-2 text-xs text-rs-muted font-mono whitespace-nowrap max-w-[130px] truncate" title={row.SNOWFLAKE_CLIENT_IDENTIFIER}>
           {row.SNOWFLAKE_CLIENT_IDENTIFIER ?? <NullBadge />}
         </td>
-        <td className="px-3 py-2 text-xs text-rs-muted whitespace-nowrap">
-          {row.INNOVATION_CLIENT_ID ?? <NullBadge />}
-        </td>
+        {/* Actions */}
         <td className="px-3 py-2">
           <div className="flex items-center gap-2">
             {missingCount > 0 && (
@@ -266,7 +267,6 @@ function MappingRow({ row, sfAccounts, editingId, onEditStart, onEditCancel, onS
 }
 
 export default function CompanyMappingPage() {
-  const { triggerRefresh } = useDashboard();
   const [rows, setRows] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const [sfAccounts, setSfAccounts] = useState([]);
@@ -297,7 +297,6 @@ export default function CompanyMappingPage() {
     setSaveError(null);
     try {
       await patchCompanyMap(editingId, field, value);
-      // Update local state so the UI reflects the change immediately
       setRows((prev) => prev.map((r) => {
         if (r.ID !== editingId) return r;
         const updated = { ...r, [field]: value };
@@ -325,7 +324,10 @@ export default function CompanyMappingPage() {
       );
     }
     if (filterGaps) {
-      r = r.filter((row) => !row.SF_ACCOUNT_ID || !row.FD_COMPANY_ID || !row.MAXIO_CUSTOMER_ID);
+      r = r.filter((row) =>
+        !row.SF_ACCOUNT_ID || !row.FD_COMPANY_ID || !row.MAXIO_CUSTOMER_ID ||
+        !row.ASTRONOMER_TAG || !row.JIRA_LABEL || !row.SNOWFLAKE_CLIENT_IDENTIFIER
+      );
     }
     return r;
   }, [rows, search, filterGaps]);
@@ -341,16 +343,10 @@ export default function CompanyMappingPage() {
   }
 
   if (loadError) {
-    if (loadError.includes('does not exist') || (rows && rows.length === 0 && !loadError)) {
-      return (
-        <div className="rounded-card border border-rs-border bg-white p-8 text-center">
-          <p className="text-sm font-medium text-rs-text">No company data yet</p>
-          <p className="text-xs text-rs-muted mt-1">The ETL worker hasn't run yet. Trigger a manual run in the Cloudflare dashboard to populate this table.</p>
-        </div>
-      );
-    }
     return <ErrorState message={loadError} onRetry={() => window.location.reload()} />;
   }
+
+  const HEADERS = ['Company', 'Salesforce', 'Maxio', 'Astronomer', 'Jira', 'Freshdesk', 'Snowflake', 'Actions'];
 
   return (
     <div>
@@ -359,7 +355,7 @@ export default function CompanyMappingPage() {
           <div>
             <h2 className="text-sm font-semibold text-rs-text">Company Mapping</h2>
             <p className="text-[11px] text-rs-muted mt-0.5">
-              Cross-source company registry — link Freshdesk, Maxio, Jira and Snowflake records to their Salesforce account
+              Cross-source company registry — link each source ID to a single internal record
             </p>
           </div>
           <button
@@ -421,7 +417,7 @@ export default function CompanyMappingPage() {
           <table className="w-full text-sm border-collapse">
             <thead>
               <tr>
-                {['Company', 'Salesforce Account', 'Freshdesk', 'Maxio', 'Snowflake ID', 'Innovation ID', 'Actions'].map((h) => (
+                {HEADERS.map((h) => (
                   <th key={h} className="bg-rs-teal text-white px-3 py-2 text-left text-xs font-semibold tracking-wide whitespace-nowrap">
                     {h}
                   </th>
@@ -431,7 +427,7 @@ export default function CompanyMappingPage() {
             <tbody>
               {filteredRows.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-xs text-rs-muted">
+                  <td colSpan={HEADERS.length} className="px-4 py-8 text-center text-xs text-rs-muted">
                     No companies match this filter
                   </td>
                 </tr>

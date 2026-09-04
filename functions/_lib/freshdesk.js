@@ -41,18 +41,25 @@ async function freshdeskFetch(env, path, retriesLeft = 3) {
 // Capped at MAX_PAGES — recent/updated tickets sort first, so a cap just
 // means very old untouched tickets fall out of scope, which is fine for a
 // "current support load" view.
-const MAX_TICKET_PAGES = 50;
+const MAX_TICKET_PAGES = 30;
 
 async function fetchAllTickets(env) {
   const tickets = [];
   for (let page = 1; page <= MAX_TICKET_PAGES; page++) {
-    const batch = await freshdeskFetch(
-      env,
-      `/tickets?per_page=100&page=${page}&include=stats&order_by=updated_at&order_type=desc&updated_since=2010-01-01T00:00:00Z`
-    );
-    tickets.push(...batch);
-    if (batch.length < 100) break;
+    try {
+      const batch = await freshdeskFetch(
+        env,
+        `/tickets?per_page=100&page=${page}&include=stats&order_by=updated_at&order_type=desc&updated_since=2010-01-01T00:00:00Z`
+      );
+      tickets.push(...batch);
+      if (batch.length < 100) break;
+    } catch (err) {
+      // Return whatever we have so far rather than failing the whole fetch
+      console.error(`Freshdesk tickets page ${page} failed: ${err.message}`);
+      break;
+    }
   }
+  if (tickets.length === 0) throw new Error('Freshdesk ticket fetch returned no results');
   return tickets;
 }
 

@@ -341,9 +341,15 @@ export default function FreshdeskDashboard() {
   }
 
   const fmtHours = (h) => h != null ? `${h}h` : '—';
+  const failures = fdQ.data?.failures ?? [];
 
   return (
     <div>
+      {failures.length > 0 && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+          Freshdesk data partially failed — could not load: {failures.join(', ')}. Check Cloudflare Pages function logs.
+        </div>
+      )}
       {/* ── Header ─────────────────────────────────────────── */}
       <div className="flex items-start justify-between mb-5">
         <div>
